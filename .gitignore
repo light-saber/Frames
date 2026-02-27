@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Internal
+FRAMES_SPEC.md
+.claude/
+
+# Thumbnails (written to /tmp at runtime, but just in case)
+frames_thumbs/
