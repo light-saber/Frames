@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import os
 import subprocess
-from dataclasses import dataclass
+import urllib.request
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +20,11 @@ from PIL import Image
 
 THUMB_DIR = Path("/tmp/frames_thumbs")
 RAW_EXTENSIONS = {".nef", ".nrw", ".raw", ".cr2", ".cr3", ".arw", ".dng"}
+SESSION_FILE = Path.home() / ".frames_session.json"
+
+OLLAMA_BASE = "http://localhost:11434"
+OLLAMA_MODEL = "qwen2.5vl:3b"
+
 DEFAULT_COLOR_SETTINGS = {
     "brightness": 0.0,
     "contrast": 1.05,
@@ -42,6 +49,26 @@ class PhotoAnalysis:
     overall_score: float
     status: str  # 'pending' | 'keep' | 'reject'
     thumbnail_path: str
+    ai_score: Optional[float] = field(default=None)   # 0-100 from Qwen
+    ai_reason: Optional[str] = field(default=None)    # 1-sentence caption
+
+
+# ─── Session Persistence ──────────────────────────────────────────────────────
+
+
+def save_session():
+    try:
+        SESSION_FILE.write_text(json.dumps([asdict(a) for a in st.session_state.analyses]))
+    except Exception:
+        pass
+
+
+def load_session() -> list[PhotoAnalysis]:
+    try:
+        data = json.loads(SESSION_FILE.read_text())
+        return [PhotoAnalysis(**d) for d in data]
+    except Exception:
+        return []
 
 
 # ─── Session State ────────────────────────────────────────────────────────────
@@ -55,7 +82,9 @@ def init_state():
         st.session_state.export_folder = st.session_state.pop("_export_pending")
 
     if "analyses" not in st.session_state:
-        st.session_state.analyses = []
+        loaded = load_session()
+        st.session_state.analyses = loaded
+        st.session_state.analyzed = bool(loaded)
     if "analyzed" not in st.session_state:
         st.session_state.analyzed = False
     if "filter" not in st.session_state:
@@ -64,6 +93,10 @@ def init_state():
         st.session_state.color_settings = DEFAULT_COLOR_SETTINGS.copy()
     if "export_done" not in st.session_state:
         st.session_state.export_done = False
+    if "ollama_available" not in st.session_state:
+        st.session_state.ollama_available = False
+    if "ollama_checked" not in st.session_state:
+        st.session_state.ollama_checked = False
 
 
 # ─── RAW Loading ──────────────────────────────────────────────────────────────
@@ -132,7 +165,79 @@ def hamming_distance(h1: str, h2: str) -> int:
     return sum(bin(a ^ b).count("1") for a, b in zip(b1, b2))
 
 
-def analyse_photo(path: str, existing_hashes: dict[str, str]) -> PhotoAnalysis:
+def check_ollama_alive() -> bool:
+    """Return True if Ollama is reachable at OLLAMA_BASE."""
+    try:
+        with urllib.request.urlopen(OLLAMA_BASE, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def score_photo_with_ai(thumbnail_path: str) -> tuple[Optional[float], Optional[str]]:
+    """Send thumbnail to Qwen2.5-VL via Ollama and return (ai_score, reason) or (None, None)."""
+    try:
+        with open(thumbnail_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+
+        prompt = (
+            "You are a professional photography critic evaluating a photo for technical quality.\n"
+            "Analyse this image and return ONLY a JSON object with exactly these keys:\n"
+            '  "composition": <integer 0-100>,\n'
+            '  "lighting": <integer 0-100>,\n'
+            '  "subject_clarity": <integer 0-100>,\n'
+            '  "overall": <integer 0-100>,\n'
+            '  "reason": "<one sentence max 20 words>"\n'
+            "Do not include any text before or after the JSON.\n"
+            "Score 0=very poor, 50=average, 100=excellent."
+        )
+
+        payload = json.dumps({
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "images": [img_b64],
+            "stream": False,
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 80,
+                "num_ctx": 512,
+            },
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{OLLAMA_BASE}/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = json.loads(resp.read())
+
+        response_text = raw.get("response", "").strip()
+
+        # Strip markdown fences if present
+        if response_text.startswith("```"):
+            lines = response_text.splitlines()
+            response_text = "\n".join(
+                line for line in lines
+                if not line.startswith("```")
+            ).strip()
+
+        data = json.loads(response_text)
+        overall = float(data["overall"])
+        composition = float(data["composition"])
+        lighting = float(data["lighting"])
+        subject_clarity = float(data["subject_clarity"])
+        reason = str(data.get("reason", ""))
+
+        ai_score = overall * 0.50 + composition * 0.20 + lighting * 0.20 + subject_clarity * 0.10
+        return float(ai_score), reason
+
+    except Exception:
+        return None, None
+
+
+def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = False) -> PhotoAnalysis:
     filename = Path(path).name
     stem = Path(path).stem
 
@@ -169,11 +274,19 @@ def analyse_photo(path: str, existing_hashes: dict[str, str]) -> PhotoAnalysis:
     mean_sat = hsv[:, :, 1].mean()
     saturation = float(mean_sat / 2.55)
 
-    # Step 6: Overall score
-    sat_fitness = float(max(0, min(100, 100 - abs(saturation - 42) * 2)))
-    overall_score = float(sharpness * 0.55 + exposure * 0.30 + sat_fitness * 0.15)
+    # Step 6: AI scoring (optional)
+    ai_score, ai_reason = (None, None)
+    if use_ai:
+        ai_score, ai_reason = score_photo_with_ai(thumb_path)
 
-    # Step 7: Duplicate detection
+    # Step 7: Overall score — weights shift when AI available
+    sat_fitness = float(max(0, min(100, 100 - abs(saturation - 42) * 2)))
+    if ai_score is not None:
+        overall_score = float(sharpness * 0.35 + exposure * 0.20 + sat_fitness * 0.10 + ai_score * 0.35)
+    else:
+        overall_score = float(sharpness * 0.55 + exposure * 0.30 + sat_fitness * 0.15)
+
+    # Step 9: Duplicate detection
     gray_full = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     phash = perceptual_hash(gray_full)
     is_duplicate = False
@@ -196,10 +309,12 @@ def analyse_photo(path: str, existing_hashes: dict[str, str]) -> PhotoAnalysis:
         overall_score=overall_score,
         status="pending",
         thumbnail_path=thumb_path,
+        ai_score=ai_score,
+        ai_reason=ai_reason,
     )
 
 
-def run_analysis(folder: str):
+def run_analysis(folder: str, use_ai: bool = False):
     folder_path = Path(folder)
     if not folder or not folder_path.is_dir():
         st.error(f"Invalid folder path: {folder}")
@@ -222,9 +337,10 @@ def run_analysis(folder: str):
     status_text = st.empty()
 
     for i, raw_file in enumerate(raw_files):
-        status_text.text(f"Analysing {raw_file.name} ({i + 1}/{len(raw_files)})…")
+        suffix = " + AI…" if use_ai else "…"
+        status_text.text(f"Analysing {raw_file.name} ({i + 1}/{len(raw_files)}){suffix}")
         try:
-            analysis = analyse_photo(str(raw_file), hashes)
+            analysis = analyse_photo(str(raw_file), hashes, use_ai=use_ai)
             results.append(analysis)
         except Exception as e:
             st.warning(f"Could not read {raw_file.name}: {e}")
@@ -242,6 +358,7 @@ def run_analysis(folder: str):
 
     st.session_state.analyses = results
     st.session_state.analyzed = True
+    save_session()
 
 
 # ─── Colour Correction Pipeline ───────────────────────────────────────────────
@@ -409,6 +526,14 @@ h1, h2, h3 { font-family: 'DM Serif Display', serif !important; }
 }
 .progress-bar-fill-gold { height: 100%; background: #c9a84c; border-radius: 2px; }
 .progress-bar-fill-blue { height: 100%; background: #60a5fa; border-radius: 2px; }
+.progress-bar-fill-purple { height: 100%; background: #818cf8; border-radius: 2px; }
+.ai-reason {
+    font-size: 0.6rem; color: #6b7280; font-style: italic;
+    font-family: 'DM Mono', monospace;
+    margin-top: 2px; line-height: 1.3;
+    overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
 
 </style>
 """
@@ -454,6 +579,19 @@ def render_photo_card(analysis: PhotoAnalysis, col):
         sharp_bar = progress_bar_html(analysis.sharpness, "progress-bar-fill-gold", "S")
         exp_bar = progress_bar_html(analysis.exposure, "progress-bar-fill-blue", "E")
 
+        ai_bar_html = ""
+        ai_reason_html = ""
+        if analysis.ai_score is not None:
+            ai_bar_html = progress_bar_html(analysis.ai_score, "progress-bar-fill-purple", "AI")
+            if analysis.ai_reason:
+                safe = (
+                    analysis.ai_reason
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                ai_reason_html = f'<div class="ai-reason">{safe}</div>'
+
         # Embed thumbnail as base64 for clean card border
         thumb_html = ""
         if os.path.exists(analysis.thumbnail_path):
@@ -469,7 +607,7 @@ def render_photo_card(analysis: PhotoAnalysis, col):
             f"{thumb_html}"
             f'<div class="filename">{fname_short}</div>'
             f'<div style="margin:4px 0;">{badge}{dup_html}</div>'
-            f"{sharp_bar}{exp_bar}"
+            f"{sharp_bar}{exp_bar}{ai_bar_html}{ai_reason_html}"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -479,11 +617,13 @@ def render_photo_card(analysis: PhotoAnalysis, col):
             keep_label = "↩" if analysis.status == "keep" else "✓"
             if st.button(keep_label, key=f"keep_{analysis.filename}", use_container_width=True):
                 analysis.status = "pending" if analysis.status == "keep" else "keep"
+                save_session()
                 st.rerun()
         with btn_col2:
             rej_label = "↩" if analysis.status == "reject" else "✗"
             if st.button(rej_label, key=f"reject_{analysis.filename}", use_container_width=True):
                 analysis.status = "pending" if analysis.status == "reject" else "reject"
+                save_session()
                 st.rerun()
 
 
@@ -501,6 +641,10 @@ def main():
     st.markdown(CSS, unsafe_allow_html=True)
     init_state()
     THUMB_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not st.session_state.ollama_checked:
+        st.session_state.ollama_available = check_ollama_alive()
+        st.session_state.ollama_checked = True
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
@@ -528,8 +672,29 @@ def main():
                     st.rerun()
 
         if st.button("▶ Analyse Photos", type="primary", use_container_width=True):
-            run_analysis(st.session_state.folder)
+            run_analysis(st.session_state.folder, use_ai=st.session_state.get("use_ai", False))
 
+        st.divider()
+
+        st.markdown("**AI Scoring**")
+        dot_color = "#4ade80" if st.session_state.ollama_available else "#f87171"
+        dot_label = "Ollama running" if st.session_state.ollama_available else "Ollama not detected"
+        status_col, btn_col = st.columns([3, 1])
+        with status_col:
+            st.markdown(
+                f'<span style="color:{dot_color};font-size:0.7rem;">● {dot_label}</span>',
+                unsafe_allow_html=True,
+            )
+        with btn_col:
+            if st.button("↺", help="Recheck Ollama connection"):
+                st.session_state.ollama_available = check_ollama_alive()
+                st.rerun()
+        st.checkbox(
+            "Enable AI scoring (Qwen2.5-VL 3B)",
+            key="use_ai",
+            disabled=not st.session_state.ollama_available,
+            help="Requires: ollama pull qwen2.5vl:3b. Adds ~5–15s per photo.",
+        )
         st.divider()
 
         filter_options = ["all", "pending", "keep", "reject", "duplicate"]
@@ -548,6 +713,7 @@ def main():
             for a in st.session_state.analyses:
                 if a.status == "pending":
                     a.status = "keep" if a.overall_score >= threshold else "reject"
+            save_session()
             st.rerun()
 
         col_keep, col_reset = st.columns(2)
@@ -555,11 +721,13 @@ def main():
             if st.button("✓ Keep all", use_container_width=True):
                 for a in st.session_state.analyses:
                     a.status = "keep"
+                save_session()
                 st.rerun()
         with col_reset:
             if st.button("✗ Reset", use_container_width=True):
                 for a in st.session_state.analyses:
                     a.status = "pending"
+                save_session()
                 st.rerun()
 
         st.divider()

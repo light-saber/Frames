@@ -18,9 +18,11 @@ A local macOS photo culling and colour correction tool for Nikon RAW files. Poin
 - **Exposure scoring** — Measures brightness distribution and penalises blown highlights and crushed shadows
 - **Saturation fitness** — Flags over-saturated or grey shots
 - **Duplicate detection** — Perceptual hashing (16×16) with Hamming distance; auto-rejects near-identical frames
+- **AI scoring (optional)** — Qwen2.5-VL 3B via Ollama scores composition, lighting, and subject clarity; blends into the overall score when enabled
 - **Colour correction pipeline** — Highlight recovery, shadow lift, brightness/contrast, saturation boost, unsharp mask sharpening — applied on export, not preview
 - **Finder folder picker** — Native macOS folder dialog via the 📂 button
 - **TIFF export** — Colour-corrected TIFFs named `{original}_edited.tiff`
+- **Session persistence** — Analysis results and keep/reject decisions survive app restarts and laptop sleep
 - **Fully local** — No internet connection, no cloud, no account
 
 ---
@@ -58,6 +60,20 @@ source .venv/bin/activate && streamlit run app.py
 
 The app opens at `http://localhost:8501` in your default browser.
 
+To keep the app running across sleep and login, install it as a background service:
+
+```bash
+cp com.frames.app.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.frames.app.plist
+```
+
+To uninstall the service:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.frames.app.plist
+rm ~/Library/LaunchAgents/com.frames.app.plist
+```
+
 ---
 
 ## Workflow
@@ -81,7 +97,27 @@ The app opens at `http://localhost:8501` in your default browser.
 | 45–69 | Amber | Acceptable — review manually |
 | 0–44 | Red | Blurry, badly exposed, or flat colour |
 
-Weights: **Sharpness 55%** · **Exposure 30%** · **Saturation fitness 15%**
+Weights without AI: **Sharpness 55%** · **Exposure 30%** · **Saturation fitness 15%**
+
+Weights with AI: **Sharpness 35%** · **AI score 35%** · **Exposure 20%** · **Saturation fitness 10%**
+
+---
+
+## AI Scoring (Optional)
+
+Frames can use **Qwen2.5-VL 3B** running locally via [Ollama](https://ollama.com) to score each photo on composition, lighting, and subject clarity.
+
+**Setup:**
+
+```bash
+# Install Ollama from https://ollama.com, then:
+ollama pull qwen2.5vl:3b
+ollama serve
+```
+
+Once Ollama is running, the sidebar shows a green **● Ollama running** indicator and the **Enable AI scoring** checkbox becomes active. Enable it before clicking **▶ Analyse Photos**. Each photo adds roughly 5–15 seconds of AI inference time.
+
+The AI score is displayed as a purple progress bar on each photo card, alongside a one-sentence critique. If Ollama is unreachable or crashes mid-run, affected photos fall back to the standard score silently.
 
 ---
 
@@ -118,6 +154,7 @@ All adjustments are applied in sequence on a `float32` [0, 1] image and exported
 | Image processing | [OpenCV](https://pypi.org/project/opencv-python-headless/), [Pillow](https://python-pillow.org) |
 | Numerics | [NumPy](https://numpy.org) |
 | Folder picker | macOS `osascript` (AppleScript) |
+| AI scoring | [Ollama](https://ollama.com) + Qwen2.5-VL 3B (optional) |
 
 ---
 
