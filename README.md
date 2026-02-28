@@ -1,14 +1,6 @@
 # Frames
 
-A local macOS photo culling and colour correction tool for Nikon RAW files. Point it at a folder of NEFs, score every shot for sharpness, exposure, and duplicates, then export your selects as colour-corrected TIFFs — all in your browser, all offline.
-
----
-
-## Screenshots
-
-![Frames home screen](Screenshots/home.png)
-
-![Frames photo grid after analysis](Screenshots/grid.png)
+A native macOS photo culling and colour correction tool for Nikon RAW files. Point it at a folder of NEFs, score every shot for sharpness, exposure, and duplicates, then export your selects as colour-corrected TIFFs — fully offline, no browser required.
 
 ---
 
@@ -22,7 +14,7 @@ A local macOS photo culling and colour correction tool for Nikon RAW files. Poin
 - **Colour correction pipeline** — Highlight recovery, shadow lift, brightness/contrast, saturation boost, unsharp mask sharpening — applied on export, not preview
 - **Finder folder picker** — Native macOS folder dialog via the 📂 button
 - **TIFF export** — Colour-corrected TIFFs named `{original}_edited.tiff`
-- **Session persistence** — Analysis results and keep/reject decisions survive app restarts and laptop sleep
+- **Session persistence** — Analysis results and keep/reject decisions survive app restarts
 - **Fully local** — No internet connection, no cloud, no account
 
 ---
@@ -48,41 +40,43 @@ bash setup.sh
 This will:
 1. Verify Python 3.9+ is present
 2. Create a `.venv` virtual environment
-3. Install all Python dependencies
+3. Install all Python dependencies (FastAPI, uvicorn, pywebview, rawpy, OpenCV, Pillow, NumPy)
 
 ---
 
-## Launch
+## Launch (dev)
 
 ```bash
-source .venv/bin/activate && streamlit run app.py
+source .venv/bin/activate && python main.py
 ```
 
-The app opens at `http://localhost:8501` in your default browser.
+The app opens in a native macOS window via WebKit. No browser needed.
 
-To keep the app running across sleep and login, install it as a background service:
+---
+
+## Build a standalone .app
 
 ```bash
-cp com.frames.app.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.frames.app.plist
+bash build.sh
 ```
 
-To uninstall the service:
+Produces `dist/Frames.app`. To install system-wide:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.frames.app.plist
-rm ~/Library/LaunchAgents/com.frames.app.plist
+cp -r dist/Frames.app /Applications/
 ```
+
+Then launch from Finder or Spotlight like any other Mac app.
 
 ---
 
 ## Workflow
 
-1. **Select folder** — Paste the path to your RAW files in the sidebar, or click 📂 to open a Finder folder picker
-2. **Analyse** — Click **▶ Analyse Photos**. A progress bar processes each file. Expect roughly 10–15 min for 200 photos on an Intel Mac; significantly faster on Apple Silicon
+1. **Select folder** — Paste the path to your RAW files, or click 📂 to open a native Finder folder picker
+2. **Analyse** — Click **▶ Analyse Photos**. Progress streams live as each file is processed. Expect roughly 10–15 min for 200 photos on Intel Mac; significantly faster on Apple Silicon
 3. **Review scores** — Photos are sorted best-first in a 4-column grid. Border colour indicates status: green = keep, red = reject, grey = pending
 4. **Auto-cull** — Use **Apply threshold** to bulk-mark photos above/below a score (default 65)
-5. **Fine-tune** — Click **✓** to keep, **✗** to reject, **↩** to reset to pending. Use the **Filter** radio to focus on a subset
+5. **Fine-tune** — Click **✓ Keep** or **✗ Reject** on any card. Use the filter tabs to focus on a subset
 6. **Adjust colour** — Tweak the Color Settings sliders in the sidebar (applied at export time, not to the preview)
 7. **Set export folder** — Enter the destination path, or click 📂 to pick with Finder
 8. **Export** — Click **⬇ Export kept photos**. Each kept photo is colour-corrected and saved as `{name}_edited.tiff`
@@ -112,12 +106,9 @@ Frames can use **Qwen2.5-VL 3B** running locally via [Ollama](https://ollama.com
 ```bash
 # Install Ollama from https://ollama.com, then:
 ollama pull qwen2.5vl:3b
-ollama serve
 ```
 
-Once Ollama is running, the sidebar shows a green **● Ollama running** indicator and the **Enable AI scoring** checkbox becomes active. Enable it before clicking **▶ Analyse Photos**. Each photo adds roughly 5–15 seconds of AI inference time.
-
-The AI score is displayed as a purple progress bar on each photo card, alongside a one-sentence critique. If Ollama is unreachable or crashes mid-run, affected photos fall back to the standard score silently.
+When Frames launches it automatically starts `ollama serve` if it isn't already running, and pulls `qwen2.5vl:3b` if the model is absent. The sidebar shows a green **● Ollama running** indicator once it's ready. Enable **AI scoring** before clicking **▶ Analyse Photos**. Each photo adds roughly 5–15 seconds of inference time.
 
 ---
 
@@ -141,7 +132,7 @@ All adjustments are applied in sequence on a `float32` [0, 1] image and exported
 - **Colour science** — Nikon Picture Control profiles (Vivid, Portrait, etc.) are not replicated. Export colours will differ from NX Studio's rendering
 - **High-ISO noise** — Heavy noise can reduce sharpness scores due to the Laplacian variance method picking up texture as signal
 - **Performance** — First run on 200 photos takes ~10–15 min on Intel Mac; much faster on M-series
-- **Output format** — Exports are standard 16-bit TIFFs, not NX Studio native files. Compatible with Lightroom, Affinity Photo, and any TIFF editor
+- **Output format** — Exports are standard TIFFs, not NX Studio native files. Compatible with Lightroom, Affinity Photo, and any TIFF editor
 
 ---
 
@@ -149,23 +140,25 @@ All adjustments are applied in sequence on a `float32` [0, 1] image and exported
 
 | Layer | Library |
 |-------|---------|
-| UI | [Streamlit](https://streamlit.io) |
+| Window | [pywebview](https://pywebview.flowrl.com) (WKWebView) |
+| Backend | [FastAPI](https://fastapi.tiangolo.com) + [uvicorn](https://www.uvicorn.org) |
+| UI | Vanilla JS + HTML/CSS (dark/gold theme) |
 | RAW decoding | [rawpy](https://pypi.org/project/rawpy/) + LibRaw |
 | Image processing | [OpenCV](https://pypi.org/project/opencv-python-headless/), [Pillow](https://python-pillow.org) |
 | Numerics | [NumPy](https://numpy.org) |
 | Folder picker | macOS `osascript` (AppleScript) |
 | AI scoring | [Ollama](https://ollama.com) + Qwen2.5-VL 3B (optional) |
+| Distribution | [PyInstaller](https://pyinstaller.org) |
 
 ---
 
 ## Acknowledgements
 
-Frames is built on the shoulders of these open-source projects:
-
-- **[Streamlit](https://github.com/streamlit/streamlit)** — Apache 2.0 — browser-based Python UI framework
 - **[rawpy](https://github.com/letmaik/rawpy)** — MIT — Python wrapper for LibRaw
 - **[LibRaw](https://github.com/LibRaw/LibRaw)** — LGPL 2.1 / CDDL 1.0 — RAW image decoding library
 - **[OpenCV](https://github.com/opencv/opencv)** — Apache 2.0 — image processing (sharpness, exposure, colour transforms)
 - **[Pillow](https://github.com/python-pillow/Pillow)** — HPND — image I/O and resizing
 - **[NumPy](https://github.com/numpy/numpy)** — BSD 3-Clause — numerical array operations
+- **[FastAPI](https://github.com/tiangolo/fastapi)** — MIT — modern Python web framework
+- **[pywebview](https://github.com/r0x0r/pywebview)** — BSD 3-Clause — native window wrapper for web content
 - **[DM Serif Display](https://fonts.google.com/specimen/DM+Serif+Display)** & **[DM Mono](https://fonts.google.com/specimen/DM+Mono)** — SIL Open Font License — typefaces via Google Fonts

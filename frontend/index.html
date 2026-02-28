@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frames</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1 class="app-title">Frames</h1>
+        <p class="app-subtitle">Nikon RAW Curator</p>
+      </div>
+
+      <div id="step-indicator" class="step-indicator"></div>
+
+      <hr class="divider">
+
+      <!-- Folder section -->
+      <div class="sidebar-section">
+        <div class="section-label">RAW folder</div>
+        <div class="folder-row">
+          <input id="folder-input" type="text" placeholder="/Volumes/SD/DCIM/..." class="text-input" spellcheck="false">
+          <button id="browse-raw-btn" class="icon-btn" title="Open folder picker">📂</button>
+        </div>
+        <button id="analyse-btn" class="primary-btn" disabled>▶ Analyse Photos</button>
+      </div>
+
+      <!-- AI Scoring section -->
+      <div id="ai-section" class="sidebar-section" style="display:none;">
+        <details id="ai-expander">
+          <summary class="expander-summary">AI Scoring</summary>
+          <div class="expander-body">
+            <div class="ai-status-row">
+              <span id="ollama-status-dot" class="status-dot red">● Ollama not detected</span>
+              <button id="recheck-ollama-btn" class="small-btn" title="Recheck">↺</button>
+            </div>
+            <label class="checkbox-label">
+              <input id="use-ai-checkbox" type="checkbox" disabled>
+              Enable AI scoring (Qwen2.5-VL 3B)
+            </label>
+          </div>
+        </details>
+      </div>
+
+      <!-- Batch actions (post-analysis) -->
+      <div id="batch-section" class="sidebar-section" style="display:none;">
+        <hr class="divider">
+        <div class="section-label">Auto-select</div>
+        <div class="threshold-row">
+          <span class="threshold-label">Keep photos scoring ≥</span>
+          <span id="threshold-val">65</span>
+        </div>
+        <input id="threshold-slider" type="range" min="0" max="100" value="65" step="5" class="slider">
+        <button id="apply-threshold-btn" class="secondary-btn">Apply threshold</button>
+
+        <div class="two-col">
+          <button id="keep-all-btn" class="secondary-btn">✓ Keep all</button>
+          <button id="reset-btn" class="secondary-btn">✗ Reset</button>
+        </div>
+
+        <!-- Color settings -->
+        <details id="color-expander">
+          <summary class="expander-summary">Color Settings</summary>
+          <div class="expander-body">
+            <button id="reset-colors-btn" class="secondary-btn full-width">Reset to defaults</button>
+            <div id="color-sliders"></div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Export section -->
+      <div id="export-section" class="sidebar-section" style="display:none;">
+        <hr class="divider">
+        <div class="section-label">Export folder</div>
+        <div class="folder-row">
+          <input id="export-input" type="text" placeholder="/path/to/export" class="text-input" spellcheck="false">
+          <button id="browse-export-btn" class="icon-btn" title="Open folder picker">📂</button>
+        </div>
+        <button id="export-btn" class="primary-btn">⬇ Export kept photos</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main id="main-content">
+      <!-- Welcome screen -->
+      <div id="welcome-screen">
+        <div class="welcome-header">
+          <h1 class="welcome-title">Frames</h1>
+          <p class="welcome-subtitle">RAW photo culling for Nikon shooters</p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon">◈</div>
+            <div class="feature-title">Sharpness Analysis</div>
+            <div class="feature-desc">Laplacian variance on the central crop.<br>Detects blur and focus issues automatically.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">◑</div>
+            <div class="feature-title">Exposure Scoring</div>
+            <div class="feature-desc">Measures brightness distribution and<br>penalises blown highlights or crushed shadows.</div>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">◫</div>
+            <div class="feature-title">Duplicate Detection</div>
+            <div class="feature-desc">Perceptual hashing (16×16) with Hamming<br>distance — auto-rejects near-identical shots.</div>
+          </div>
+        </div>
+        <div class="welcome-cta">Select a RAW folder in the sidebar to begin.</div>
+      </div>
+
+      <!-- Photo grid (post-analysis) -->
+      <div id="photo-view" style="display:none;">
+        <!-- Stats strip + sort -->
+        <div class="top-bar">
+          <div id="stats-strip" class="stats-strip"></div>
+          <select id="sort-select" class="sort-select">
+            <option value="score_desc">Score ↓</option>
+            <option value="score_asc">Score ↑</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+          </select>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="tab-bar">
+          <button class="tab active" data-filter="all">All (0)</button>
+          <button class="tab" data-filter="pending">Pending (0)</button>
+          <button class="tab" data-filter="keep">Keep (0)</button>
+          <button class="tab" data-filter="reject">Reject (0)</button>
+          <button class="tab" data-filter="duplicate">Dupes (0)</button>
+        </div>
+
+        <!-- Progress bar (during analysis) -->
+        <div id="progress-bar-wrap" style="display:none;">
+          <div id="progress-bar" class="progress-bar"></div>
+          <div id="progress-label" class="progress-label"></div>
+        </div>
+
+        <!-- Cards grid -->
+        <div id="photo-grid" class="photo-grid"></div>
+      </div>
+
+      <!-- Export progress overlay -->
+      <div id="export-overlay" class="overlay" style="display:none;">
+        <div class="overlay-box">
+          <div class="overlay-title">Exporting…</div>
+          <div id="export-progress-bar" class="progress-bar"></div>
+          <div id="export-label" class="progress-label"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
