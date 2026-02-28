@@ -34,6 +34,21 @@ DEFAULT_COLOR_SETTINGS = {
     "sharpening": 0.3,
 }
 
+SORT_OPTIONS = {
+    "score_desc": "Score ↓",
+    "score_asc":  "Score ↑",
+    "name_asc":   "Name A–Z",
+    "name_desc":  "Name Z–A",
+}
+
+EMPTY_STATES = {
+    "pending":   ("Nothing left to decide",  "All photos have been marked keep or reject."),
+    "keep":      ("No photos kept yet",       "Mark photos with ✓ Keep to see them here."),
+    "reject":    ("No photos rejected",       "Mark photos with ✗ Reject to see them here."),
+    "duplicate": ("No duplicates found",      "The perceptual hash analysis found no near-identical shots."),
+    "all":       ("No photos found",          "Check that the folder contains supported RAW files."),
+}
+
 # ─── Data Model ───────────────────────────────────────────────────────────────
 
 
@@ -49,8 +64,8 @@ class PhotoAnalysis:
     overall_score: float
     status: str  # 'pending' | 'keep' | 'reject'
     thumbnail_path: str
-    ai_score: Optional[float] = field(default=None)   # 0-100 from Qwen
-    ai_reason: Optional[str] = field(default=None)    # 1-sentence caption
+    ai_score: Optional[float] = field(default=None)
+    ai_reason: Optional[str] = field(default=None)
 
 
 # ─── Session Persistence ──────────────────────────────────────────────────────
@@ -87,8 +102,6 @@ def init_state():
         st.session_state.analyzed = bool(loaded)
     if "analyzed" not in st.session_state:
         st.session_state.analyzed = False
-    if "filter" not in st.session_state:
-        st.session_state.filter = "all"
     if "color_settings" not in st.session_state:
         st.session_state.color_settings = DEFAULT_COLOR_SETTINGS.copy()
     if "export_done" not in st.session_state:
@@ -97,6 +110,8 @@ def init_state():
         st.session_state.ollama_available = False
     if "ollama_checked" not in st.session_state:
         st.session_state.ollama_checked = False
+    if "sort_by" not in st.session_state:
+        st.session_state.sort_by = "score_desc"
 
 
 # ─── RAW Loading ──────────────────────────────────────────────────────────────
@@ -286,7 +301,7 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
     else:
         overall_score = float(sharpness * 0.55 + exposure * 0.30 + sat_fitness * 0.15)
 
-    # Step 9: Duplicate detection
+    # Step 8: Duplicate detection
     gray_full = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     phash = perceptual_hash(gray_full)
     is_duplicate = False
@@ -348,10 +363,10 @@ def run_analysis(folder: str, use_ai: bool = False):
 
     status_text.text("Analysis complete!")
 
-    # Step 8: Sort by overall score descending
+    # Sort by overall score descending
     results.sort(key=lambda x: x.overall_score, reverse=True)
 
-    # Step 9: Auto-flag duplicates
+    # Auto-flag duplicates
     for r in results:
         if r.is_duplicate:
             r.status = "reject"
@@ -433,11 +448,38 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap');
 
-/* DM Mono everywhere — config.toml handles base colors */
+:root {
+    --bg-app:        #0f0f0f;
+    --bg-card:       #181818;
+    --bg-surface:    #1c1c1c;
+    --border-subtle: #242424;
+    --border-card:   #2a2a2a;
+    --text-primary:  #e8e2d9;
+    --text-muted:    #6b6560;
+    --text-dimmed:   #3d3836;
+    --accent-gold:   #c9a84c;
+    --green-keep:    #4ade80;
+    --red-reject:    #f87171;
+    --blue-exposure: #60a5fa;
+    --purple-dupe:   #a78bfa;
+    --amber-pending: #fbbf24;
+}
+
+/* DM Mono everywhere */
 html, body, button, input, select, textarea,
 [data-testid="stApp"], [data-testid="stSidebar"],
-.stMarkdown, label, p, span, li {
+.stMarkdown, label, p, li {
     font-family: 'DM Mono', monospace !important;
+}
+/* Target spans but not Streamlit icon spans (Material Symbols) */
+span:not([data-testid="stExpanderToggleIcon"]):not(.material-symbols-rounded):not(.stIconMaterial) {
+    font-family: 'DM Mono', monospace !important;
+}
+/* Restore Material Symbols font for icons */
+[data-testid="stExpanderToggleIcon"],
+.material-symbols-rounded,
+.stIconMaterial {
+    font-family: 'Material Symbols Rounded' !important;
 }
 
 h1, h2, h3 { font-family: 'DM Serif Display', serif !important; }
@@ -451,88 +493,214 @@ h1, h2, h3 { font-family: 'DM Serif Display', serif !important; }
     transition: border-color 0.15s, color 0.15s;
 }
 .stButton > button:hover {
-    border-color: #c9a84c !important;
-    color: #c9a84c !important;
+    border-color: var(--accent-gold) !important;
+    color: var(--accent-gold) !important;
 }
 
-/* ── Custom HTML components ─────────────────────────────────────────────── */
+/* Tighter column padding */
+[data-testid="column"] { padding: 0 4px !important; }
+
+/* Sidebar padding */
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 1.5rem;
+    padding-left: 1.2rem;
+    padding-right: 1.2rem;
+}
+
+/* ── Photo card ─────────────────────────────────────────────────────────── */
 
 .photo-card {
-    background: #1c2028;
+    background: var(--bg-surface);
     border-radius: 8px;
-    padding: 10px;
+    padding: 8px;
     margin-bottom: 4px;
-    border: 2px solid #2d3240;
+    border: 2px solid var(--border-card);
 }
 
+/* Thumbnail wrapper with hover overlay */
+.thumb-wrap {
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.thumb-wrap img {
+    width: 100%;
+    display: block;
+}
+
+/* Score badge — absolute overlay, top-right */
+.score-overlay {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+/* Metrics panel — revealed on hover */
+.card-metrics {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.82));
+    padding: 20px 8px 8px 8px;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+.thumb-wrap:hover .card-metrics { opacity: 1; }
+
+.metric-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 3px;
+}
+.metric-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.55rem;
+    color: rgba(255,255,255,0.65);
+    width: 14px;
+    text-align: right;
+    flex-shrink: 0;
+}
+.metric-bar-bg {
+    flex: 1;
+    height: 3px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.metric-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+}
+.metric-val {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.55rem;
+    color: rgba(255,255,255,0.65);
+    width: 22px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* Card footer */
+.card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 2px 2px 2px;
+}
 .filename {
     font-family: 'DM Mono', monospace;
-    font-size: 0.65rem;
-    color: #a09b96;
+    font-size: 0.62rem;
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin: 4px 0;
 }
-
-.score-high {
-    background: #1a3a2a; color: #4ade80; border: 1px solid #166534;
-    border-radius: 20px; padding: 2px 10px;
-    font-size: 0.7rem; font-family: 'DM Mono', monospace;
-}
-.score-mid {
-    background: #3a2e1a; color: #fbbf24; border: 1px solid #92400e;
-    border-radius: 20px; padding: 2px 10px;
-    font-size: 0.7rem; font-family: 'DM Mono', monospace;
-}
-.score-low {
-    background: #3a1a1a; color: #f87171; border: 1px solid #991b1b;
-    border-radius: 20px; padding: 2px 10px;
-    font-size: 0.7rem; font-family: 'DM Mono', monospace;
-}
-
 .dup-tag {
-    background: #2a1a3a; color: #a78bfa; border: 1px solid #5b21b6;
-    border-radius: 20px; padding: 2px 8px;
-    font-size: 0.65rem; font-family: 'DM Mono', monospace; margin-left: 4px;
+    background: #2a1a3a;
+    color: var(--purple-dupe);
+    border: 1px solid #5b21b6;
+    border-radius: 20px;
+    padding: 1px 7px;
+    font-size: 0.6rem;
+    font-family: 'DM Mono', monospace;
+    flex-shrink: 0;
+    margin-left: 4px;
 }
 
-.stat-card {
-    background: #1c2028;
-    border: 1px solid #2d3240;
-    border-radius: 8px;
-    padding: 12px 16px;
-    text-align: center;
+/* ── Stats strip ────────────────────────────────────────────────────────── */
+
+.stats-strip {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding: 6px 0 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
 }
-.stat-label {
-    font-size: 0.65rem; color: #a09b96;
-    font-family: 'DM Mono', monospace;
-    text-transform: uppercase; letter-spacing: 0.08em;
-}
-.stat-value {
-    font-size: 1.6rem;
+.stat-item-num {
     font-family: 'DM Serif Display', serif;
-    line-height: 1.2;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+}
+.stat-item-lbl {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-left: 3px;
+    margin-right: 14px;
 }
 
-.progress-bar-wrap {
-    margin: 3px 0; display: flex; align-items: center;
-    gap: 6px; font-size: 0.6rem; color: #a09b96;
-    font-family: 'DM Mono', monospace;
+/* ── Feature cards (welcome screen) ────────────────────────────────────── */
+
+.feature-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 18px 20px;
+    height: 100%;
 }
-.progress-bar-bg {
-    flex: 1; height: 4px; background: #2d3240;
-    border-radius: 2px; overflow: hidden;
+.feature-icon { font-size: 1.3rem; margin-bottom: 8px; }
+.feature-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem;
+    color: var(--text-primary);
+    margin-bottom: 5px;
 }
-.progress-bar-fill-gold { height: 100%; background: #c9a84c; border-radius: 2px; }
-.progress-bar-fill-blue { height: 100%; background: #60a5fa; border-radius: 2px; }
-.progress-bar-fill-purple { height: 100%; background: #818cf8; border-radius: 2px; }
-.ai-reason {
-    font-size: 0.6rem; color: #6b7280; font-style: italic;
+.feature-desc {
     font-family: 'DM Mono', monospace;
-    margin-top: 2px; line-height: 1.3;
-    overflow: hidden; display: -webkit-box;
-    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    font-size: 0.63rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+/* ── Empty states ───────────────────────────────────────────────────────── */
+
+.empty-state {
+    text-align: center;
+    padding: 64px 20px;
+}
+.empty-icon {
+    font-size: 2rem;
+    color: var(--text-dimmed);
+    margin-bottom: 14px;
+}
+.empty-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+.empty-desc {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.63rem;
+    color: var(--text-dimmed);
+}
+
+/* ── Tab overrides ──────────────────────────────────────────────────────── */
+
+[data-testid="stTabs"] [role="tab"] {
+    font-family: 'DM Mono', monospace !important;
+    font-size: 0.65rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.06em !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--accent-gold) !important;
+}
+[data-testid="stTabs"] [role="tablist"] {
+    border-bottom-color: var(--border-subtle) !important;
 }
 
 </style>
@@ -541,86 +709,195 @@ h1, h2, h3 { font-family: 'DM Serif Display', serif !important; }
 # ─── Helper rendering ─────────────────────────────────────────────────────────
 
 
-def score_badge(score: float) -> str:
+def render_step_indicator(current_step: int):
+    """Render the 4-step workflow indicator in the sidebar."""
+    steps = [(1, "Load"), (2, "Analyse"), (3, "Cull"), (4, "Export")]
+
+    items = []
+    for i, (num, label) in enumerate(steps):
+        if num < current_step:
+            dot = "✓"
+            dot_color = "var(--green-keep)"
+            lbl_color = "var(--text-muted)"
+        elif num == current_step:
+            dot = "●"
+            dot_color = "var(--accent-gold)"
+            lbl_color = "var(--accent-gold)"
+        else:
+            dot = "○"
+            dot_color = "var(--text-dimmed)"
+            lbl_color = "var(--text-dimmed)"
+
+        item = (
+            f'<div style="display:flex;flex-direction:column;align-items:center;flex:1;">'
+            f'<span style="font-size:0.75rem;color:{dot_color};">{dot}</span>'
+            f'<span style="font-family:\'DM Mono\',monospace;font-size:0.5rem;'
+            f'text-transform:uppercase;letter-spacing:0.06em;color:{lbl_color};'
+            f'margin-top:3px;">{label}</span>'
+            f'</div>'
+        )
+        items.append(item)
+        if i < len(steps) - 1:
+            items.append(
+                '<div style="height:1px;width:12px;flex:none;background:var(--border-subtle);'
+                'margin-bottom:14px;"></div>'
+            )
+
+    html = (
+        '<div style="display:flex;align-items:center;'
+        'padding:10px 0 14px 0;margin-bottom:4px;">'
+        + "".join(items)
+        + "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def get_current_step() -> int:
+    folder = st.session_state.get("folder", "")
+    folder_set = bool(folder) and Path(folder).is_dir()
+    analyzed = st.session_state.get("analyzed", False)
+    has_keeps = any(a.status == "keep" for a in st.session_state.get("analyses", []))
+
+    if not folder_set:
+        return 1
+    if not analyzed:
+        return 2
+    if not has_keeps:
+        return 3
+    return 4
+
+
+def render_stats_strip(analyses: list[PhotoAnalysis]) -> str:
+    """Return HTML for the compact stats strip."""
+    total = len(analyses)
+    kept = sum(1 for a in analyses if a.status == "keep")
+    rejected = sum(1 for a in analyses if a.status == "reject")
+    pending = sum(1 for a in analyses if a.status == "pending")
+    dupes = sum(1 for a in analyses if a.is_duplicate)
+    avg_score = sum(a.overall_score for a in analyses) / total if total else 0
+
+    def item(num, label):
+        return (
+            f'<span class="stat-item-num">{num}</span>'
+            f'<span class="stat-item-lbl">{label}</span>'
+        )
+
+    return (
+        '<div class="stats-strip">'
+        + item(total, "photos")
+        + item(kept, "kept")
+        + item(rejected, "rejected")
+        + item(pending, "pending")
+        + item(dupes, "dupes")
+        + item(f"{avg_score:.0f}", "avg score")
+        + "</div>"
+    )
+
+
+def render_empty_state(filter_key: str) -> str:
+    """Return HTML for an empty-state panel."""
+    title, desc = EMPTY_STATES.get(filter_key, ("No photos", ""))
+    return (
+        '<div class="empty-state">'
+        '<div class="empty-icon">◻</div>'
+        f'<div class="empty-title">{title}</div>'
+        f'<div class="empty-desc">{desc}</div>'
+        "</div>"
+    )
+
+
+def score_badge_overlay(score: float) -> str:
+    """Return the color for the score overlay badge."""
     if score >= 70:
-        cls = "score-high"
+        return "var(--green-keep)"
     elif score >= 45:
-        cls = "score-mid"
-    else:
-        cls = "score-low"
-    return f'<span class="{cls}">{score:.0f}</span>'
+        return "var(--amber-pending)"
+    return "var(--red-reject)"
 
 
-def progress_bar_html(value: float, color_class: str, label: str) -> str:
+def sort_analyses(analyses: list[PhotoAnalysis], sort_by: str) -> list[PhotoAnalysis]:
+    if sort_by == "score_desc":
+        return sorted(analyses, key=lambda a: a.overall_score, reverse=True)
+    elif sort_by == "score_asc":
+        return sorted(analyses, key=lambda a: a.overall_score)
+    elif sort_by == "name_asc":
+        return sorted(analyses, key=lambda a: a.filename.lower())
+    elif sort_by == "name_desc":
+        return sorted(analyses, key=lambda a: a.filename.lower(), reverse=True)
+    return list(analyses)
+
+
+def _metric_row(label: str, value: float, color: str) -> str:
     pct = min(100, max(0, value))
     return (
-        f'<div class="progress-bar-wrap">'
-        f'<span>{label}</span>'
-        f'<div class="progress-bar-bg">'
-        f'<div class="{color_class}" style="width:{pct:.0f}%"></div>'
-        f'</div>'
-        f'<span>{pct:.0f}</span>'
-        f'</div>'
+        '<div class="metric-row">'
+        f'<span class="metric-label">{label}</span>'
+        '<div class="metric-bar-bg">'
+        f'<div class="metric-bar-fill" style="width:{pct:.0f}%;background:{color};"></div>'
+        "</div>"
+        f'<span class="metric-val">{pct:.0f}</span>'
+        "</div>"
     )
 
 
 def render_photo_card(analysis: PhotoAnalysis, col):
     with col:
-        border_colors = {"keep": "#4ade80", "reject": "#f87171", "pending": "#444"}
-        border_color = border_colors.get(analysis.status, "#444")
+        border_colors = {
+            "keep":    "var(--green-keep)",
+            "reject":  "var(--red-reject)",
+            "pending": "var(--border-card)",
+        }
+        border_color = border_colors.get(analysis.status, "var(--border-card)")
 
-        badge = score_badge(analysis.overall_score)
-        dup_html = '<span class="dup-tag">dup</span>' if analysis.is_duplicate else ""
         fname_short = (
-            analysis.filename[:28] + "…"
-            if len(analysis.filename) > 28
+            analysis.filename[:22] + "…"
+            if len(analysis.filename) > 22
             else analysis.filename
         )
-        sharp_bar = progress_bar_html(analysis.sharpness, "progress-bar-fill-gold", "S")
-        exp_bar = progress_bar_html(analysis.exposure, "progress-bar-fill-blue", "E")
+        dup_html = '<span class="dup-tag">dup</span>' if analysis.is_duplicate else ""
 
-        ai_bar_html = ""
-        ai_reason_html = ""
-        if analysis.ai_score is not None:
-            ai_bar_html = progress_bar_html(analysis.ai_score, "progress-bar-fill-purple", "AI")
-            if analysis.ai_reason:
-                safe = (
-                    analysis.ai_reason
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                )
-                ai_reason_html = f'<div class="ai-reason">{safe}</div>'
+        score_color = score_badge_overlay(analysis.overall_score)
 
-        # Embed thumbnail as base64 for clean card border
+        # Build thumbnail with overlay badge and hover metrics
         thumb_html = ""
         if os.path.exists(analysis.thumbnail_path):
             with open(analysis.thumbnail_path, "rb") as f:
                 thumb_b64 = base64.b64encode(f.read()).decode()
+
+            metrics = _metric_row("S", analysis.sharpness, "var(--accent-gold)")
+            metrics += _metric_row("E", analysis.exposure, "var(--blue-exposure)")
+            if analysis.ai_score is not None:
+                metrics += _metric_row("AI", analysis.ai_score, "var(--purple-dupe)")
+
             thumb_html = (
-                f'<img src="data:image/jpeg;base64,{thumb_b64}" '
-                f'style="width:100%;border-radius:4px;display:block;margin-bottom:6px;">'
+                '<div class="thumb-wrap">'
+                f'<img src="data:image/jpeg;base64,{thumb_b64}" style="width:100%;display:block;">'
+                f'<div class="score-overlay" style="color:{score_color};">'
+                f'{analysis.overall_score:.0f}</div>'
+                f'<div class="card-metrics">{metrics}</div>'
+                "</div>"
             )
 
         st.markdown(
             f'<div class="photo-card" style="border-color:{border_color};">'
             f"{thumb_html}"
-            f'<div class="filename">{fname_short}</div>'
-            f'<div style="margin:4px 0;">{badge}{dup_html}</div>'
-            f"{sharp_bar}{exp_bar}{ai_bar_html}{ai_reason_html}"
+            f'<div class="card-footer">'
+            f'<span class="filename">{fname_short}</span>'
+            f"{dup_html}"
+            f"</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
 
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
-            keep_label = "↩" if analysis.status == "keep" else "✓"
+            keep_label = "↩ kept" if analysis.status == "keep" else "✓ Keep"
             if st.button(keep_label, key=f"keep_{analysis.filename}", use_container_width=True):
                 analysis.status = "pending" if analysis.status == "keep" else "keep"
                 save_session()
                 st.rerun()
         with btn_col2:
-            rej_label = "↩" if analysis.status == "reject" else "✗"
+            rej_label = "↩ unrej" if analysis.status == "reject" else "✗ Reject"
             if st.button(rej_label, key=f"reject_{analysis.filename}", use_container_width=True):
                 analysis.status = "pending" if analysis.status == "reject" else "reject"
                 save_session()
@@ -646,15 +923,31 @@ def main():
         st.session_state.ollama_available = check_ollama_alive()
         st.session_state.ollama_checked = True
 
+    analyses = st.session_state.analyses
+    folder = st.session_state.get("folder", "")
+    folder_set = bool(folder) and Path(folder).is_dir()
+    analyzed = st.session_state.get("analyzed", False)
+    has_keeps = any(a.status == "keep" for a in analyses)
+    current_step = get_current_step()
+
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
+        # Header
         st.markdown(
             '<h1 style="font-family:\'DM Serif Display\',serif;font-size:2rem;margin-bottom:0;">'
             "Frames</h1>"
-            '<p style="color:#6b6560;font-size:0.75rem;margin-top:2px;">Nikon RAW Curator</p>',
+            '<p style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;'
+            'font-family:\'DM Mono\',monospace;text-transform:uppercase;letter-spacing:0.08em;">'
+            "Nikon RAW Curator</p>",
             unsafe_allow_html=True,
         )
 
+        # Step indicator
+        render_step_indicator(current_step)
+
+        st.divider()
+
+        # ── Load section (always visible) ────────────────────────────────────
         st.markdown("**RAW folder**")
         inp_col, browse_col = st.columns([5, 1])
         with inp_col:
@@ -671,174 +964,194 @@ def main():
                     st.session_state._folder_pending = picked
                     st.rerun()
 
-        if st.button("▶ Analyse Photos", type="primary", use_container_width=True):
+        analyse_label = "↺ Re-analyse" if analyzed else "▶ Analyse Photos"
+        if st.button(
+            analyse_label,
+            type="primary",
+            use_container_width=True,
+            disabled=not folder_set,
+        ):
             run_analysis(st.session_state.folder, use_ai=st.session_state.get("use_ai", False))
 
-        st.divider()
+        # ── AI Scoring expander (after folder set) ───────────────────────────
+        if folder_set:
+            with st.expander("AI Scoring", expanded=st.session_state.ollama_available):
+                dot_color = "var(--green-keep)" if st.session_state.ollama_available else "var(--red-reject)"
+                dot_label = "Ollama running" if st.session_state.ollama_available else "Ollama not detected"
+                status_col, recheck_col = st.columns([3, 1])
+                with status_col:
+                    st.markdown(
+                        f'<span style="color:{dot_color};font-size:0.7rem;">● {dot_label}</span>',
+                        unsafe_allow_html=True,
+                    )
+                with recheck_col:
+                    if st.button("↺", help="Recheck Ollama connection"):
+                        st.session_state.ollama_available = check_ollama_alive()
+                        st.rerun()
+                st.checkbox(
+                    "Enable AI scoring (Qwen2.5-VL 3B)",
+                    key="use_ai",
+                    disabled=not st.session_state.ollama_available,
+                    help="Requires: ollama pull qwen2.5vl:3b. Adds ~5–15s per photo.",
+                )
 
-        st.markdown("**AI Scoring**")
-        dot_color = "#4ade80" if st.session_state.ollama_available else "#f87171"
-        dot_label = "Ollama running" if st.session_state.ollama_available else "Ollama not detected"
-        status_col, btn_col = st.columns([3, 1])
-        with status_col:
-            st.markdown(
-                f'<span style="color:{dot_color};font-size:0.7rem;">● {dot_label}</span>',
-                unsafe_allow_html=True,
-            )
-        with btn_col:
-            if st.button("↺", help="Recheck Ollama connection"):
-                st.session_state.ollama_available = check_ollama_alive()
-                st.rerun()
-        st.checkbox(
-            "Enable AI scoring (Qwen2.5-VL 3B)",
-            key="use_ai",
-            disabled=not st.session_state.ollama_available,
-            help="Requires: ollama pull qwen2.5vl:3b. Adds ~5–15s per photo.",
-        )
-        st.divider()
+        # ── Batch actions + Color Settings (after analysis) ──────────────────
+        if analyzed:
+            st.divider()
 
-        filter_options = ["all", "pending", "keep", "reject", "duplicate"]
-        filter_choice = st.radio(
-            "Filter",
-            options=filter_options,
-            index=filter_options.index(st.session_state.filter),
-        )
-        st.session_state.filter = filter_choice
-
-        st.divider()
-
-        st.markdown("**Auto-select**")
-        threshold = st.slider("Keep photos scoring ≥", 0, 100, 65, step=5)
-        if st.button("Apply threshold", use_container_width=True):
-            for a in st.session_state.analyses:
-                if a.status == "pending":
-                    a.status = "keep" if a.overall_score >= threshold else "reject"
-            save_session()
-            st.rerun()
-
-        col_keep, col_reset = st.columns(2)
-        with col_keep:
-            if st.button("✓ Keep all", use_container_width=True):
-                for a in st.session_state.analyses:
-                    a.status = "keep"
-                save_session()
-                st.rerun()
-        with col_reset:
-            if st.button("✗ Reset", use_container_width=True):
-                for a in st.session_state.analyses:
-                    a.status = "pending"
+            st.markdown("**Auto-select**")
+            threshold = st.slider("Keep photos scoring ≥", 0, 100, 65, step=5)
+            if st.button("Apply threshold", use_container_width=True):
+                for a in analyses:
+                    if a.status == "pending":
+                        a.status = "keep" if a.overall_score >= threshold else "reject"
                 save_session()
                 st.rerun()
 
-        st.divider()
-
-        st.markdown("**Color Settings**")
-        cs = st.session_state.color_settings
-        cs["brightness"] = st.slider("Brightness", -0.3, 0.3, float(cs["brightness"]), step=0.01)
-        cs["contrast"] = st.slider("Contrast", 0.7, 1.5, float(cs["contrast"]), step=0.01)
-        cs["saturation_boost"] = st.slider("Saturation", 0.5, 1.8, float(cs["saturation_boost"]), step=0.05)
-        cs["highlight_recovery"] = st.slider("Highlight recovery", 0.0, 0.3, float(cs["highlight_recovery"]), step=0.01)
-        cs["shadow_lift"] = st.slider("Shadow lift", 0.0, 0.15, float(cs["shadow_lift"]), step=0.005)
-        cs["sharpening"] = st.slider("Sharpening", 0.0, 1.0, float(cs["sharpening"]), step=0.05)
-
-        st.divider()
-
-        st.markdown("**Export folder**")
-        exp_col, exp_browse_col = st.columns([5, 1])
-        with exp_col:
-            st.text_input(
-                "Export folder path",
-                placeholder="/path/to/export",
-                key="export_folder",
-                label_visibility="collapsed",
-            )
-        with exp_browse_col:
-            if st.button("📂", key="browse_export", help="Open Finder folder picker"):
-                picked = pick_folder_dialog()
-                if picked:
-                    st.session_state._export_pending = picked
+            col_keep, col_reset = st.columns(2)
+            with col_keep:
+                if st.button("✓ Keep all", use_container_width=True):
+                    for a in analyses:
+                        a.status = "keep"
+                    save_session()
+                    st.rerun()
+            with col_reset:
+                if st.button("✗ Reset", use_container_width=True):
+                    for a in analyses:
+                        a.status = "pending"
+                    save_session()
                     st.rerun()
 
-        if st.button("⬇ Export kept photos", type="primary", use_container_width=True):
-            export_photos(st.session_state.get("export_folder", ""), cs)
+            with st.expander("Color Settings", expanded=False):
+                if st.button("Reset to defaults", use_container_width=True):
+                    st.session_state.color_settings = DEFAULT_COLOR_SETTINGS.copy()
+                    st.rerun()
+                cs = st.session_state.color_settings
+                cs["brightness"] = st.slider("Brightness", -0.3, 0.3, float(cs["brightness"]), step=0.01)
+                cs["contrast"] = st.slider("Contrast", 0.7, 1.5, float(cs["contrast"]), step=0.01)
+                cs["saturation_boost"] = st.slider("Saturation", 0.5, 1.8, float(cs["saturation_boost"]), step=0.05)
+                cs["highlight_recovery"] = st.slider("Highlight recovery", 0.0, 0.3, float(cs["highlight_recovery"]), step=0.01)
+                cs["shadow_lift"] = st.slider("Shadow lift", 0.0, 0.15, float(cs["shadow_lift"]), step=0.005)
+                cs["sharpening"] = st.slider("Sharpening", 0.0, 1.0, float(cs["sharpening"]), step=0.05)
 
-    # ── Main area ─────────────────────────────────────────────────────────────
-    if not st.session_state.analyzed:
+        # ── Export section (after analysis + has keeps) ──────────────────────
+        if analyzed and has_keeps:
+            st.divider()
+
+            st.markdown("**Export folder**")
+            exp_col, exp_browse_col = st.columns([5, 1])
+            with exp_col:
+                st.text_input(
+                    "Export folder path",
+                    placeholder="/path/to/export",
+                    key="export_folder",
+                    label_visibility="collapsed",
+                )
+            with exp_browse_col:
+                if st.button("📂", key="browse_export", help="Open Finder folder picker"):
+                    picked = pick_folder_dialog()
+                    if picked:
+                        st.session_state._export_pending = picked
+                        st.rerun()
+
+            if st.button("⬇ Export kept photos", type="primary", use_container_width=True):
+                export_photos(
+                    st.session_state.get("export_folder", ""),
+                    st.session_state.color_settings,
+                )
+
+    # ── Welcome screen ────────────────────────────────────────────────────────
+    if not analyzed:
         st.markdown(
-            '<h1 style="font-family:\'DM Serif Display\',serif;font-size:3rem;color:#e8e2d9;">Frames</h1>',
+            '<div style="padding:40px 0 28px 0;">'
+            '<h1 style="font-family:\'DM Serif Display\',serif;font-size:3.5rem;'
+            'color:var(--text-primary);margin-bottom:6px;line-height:1;">Frames</h1>'
+            '<p style="font-family:\'DM Mono\',monospace;font-size:0.7rem;'
+            'text-transform:uppercase;letter-spacing:0.12em;color:var(--text-muted);'
+            'margin-bottom:0;">RAW photo culling for Nikon shooters</p>'
+            "</div>",
             unsafe_allow_html=True,
         )
-        st.markdown("A local photo culling and colour correction tool for Nikon RAW files.")
 
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.info(
-                "**Sharpness Analysis**  \n"
-                "Laplacian variance on the central crop — detects blur and focus issues."
-            )
-        with c2:
-            st.info(
-                "**Exposure Scoring**  \n"
-                "Measures brightness distribution and penalises blown highlights or crushed shadows."
-            )
-        with c3:
-            st.info(
-                "**Duplicate Detection**  \n"
-                "Perceptual hashing (16×16) with Hamming distance — automatically rejects near-identical shots."
-            )
+        for col, icon, title, desc in [
+            (c1, "◈", "Sharpness Analysis",
+             "Laplacian variance on the central crop.<br>Detects blur and focus issues automatically."),
+            (c2, "◑", "Exposure Scoring",
+             "Measures brightness distribution and<br>penalises blown highlights or crushed shadows."),
+            (c3, "◫", "Duplicate Detection",
+             "Perceptual hashing (16×16) with Hamming<br>distance — auto-rejects near-identical shots."),
+        ]:
+            with col:
+                st.markdown(
+                    f'<div class="feature-card">'
+                    f'<div class="feature-icon">{icon}</div>'
+                    f'<div class="feature-title">{title}</div>'
+                    f'<div class="feature-desc">{desc}</div>'
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
-        st.markdown("---")
-        st.info("Enter a RAW folder path in the sidebar and click **▶ Analyse Photos** to begin.")
-        return
-
-    # ── Stats bar ─────────────────────────────────────────────────────────────
-    analyses = st.session_state.analyses
-    total = len(analyses)
-    kept = sum(1 for a in analyses if a.status == "keep")
-    rejected = sum(1 for a in analyses if a.status == "reject")
-    pending = sum(1 for a in analyses if a.status == "pending")
-    dupes = sum(1 for a in analyses if a.is_duplicate)
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    for col, label, value, color in [
-        (c1, "Total", total, "#e8e2d9"),
-        (c2, "Keep", kept, "#4ade80"),
-        (c3, "Reject", rejected, "#f87171"),
-        (c4, "Pending", pending, "#fbbf24"),
-        (c5, "Dupes", dupes, "#a78bfa"),
-    ]:
-        with col:
-            st.markdown(
-                f'<div class="stat-card">'
-                f'<div class="stat-label">{label}</div>'
-                f'<div class="stat-value" style="color:{color};">{value}</div>'
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ── Grid view ─────────────────────────────────────────────────────────────
-    filt = st.session_state.filter
-    if filt == "all":
-        visible = analyses
-    elif filt == "duplicate":
-        visible = [a for a in analyses if a.is_duplicate]
-    else:
-        visible = [a for a in analyses if a.status == filt]
-
-    if not visible:
         st.markdown(
-            f'<p style="color:#6b6560;">No photos match filter: <em>{filt}</em></p>',
+            '<div style="border:1px dashed var(--border-card);border-radius:8px;'
+            'padding:20px;text-align:center;color:var(--text-muted);'
+            'font-family:\'DM Mono\',monospace;font-size:0.7rem;margin-top:24px;">'
+            "Select a RAW folder in the sidebar to begin."
+            "</div>",
             unsafe_allow_html=True,
         )
         return
 
-    visible = sorted(visible, key=lambda a: a.overall_score, reverse=True)
+    # ── Stats strip + sort control ────────────────────────────────────────────
+    strip_col, sort_col = st.columns([7, 1])
+    with strip_col:
+        st.markdown(render_stats_strip(analyses), unsafe_allow_html=True)
+    with sort_col:
+        st.selectbox(
+            "Sort",
+            options=list(SORT_OPTIONS.keys()),
+            format_func=lambda k: SORT_OPTIONS[k],
+            key="sort_by",
+            label_visibility="collapsed",
+        )
 
-    cols = st.columns(4)
-    for i, analysis in enumerate(visible):
-        render_photo_card(analysis, cols[i % 4])
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+    # ── Filter tabs ───────────────────────────────────────────────────────────
+    n_all     = len(analyses)
+    n_pending = sum(1 for a in analyses if a.status == "pending")
+    n_keep    = sum(1 for a in analyses if a.status == "keep")
+    n_reject  = sum(1 for a in analyses if a.status == "reject")
+    n_dupes   = sum(1 for a in analyses if a.is_duplicate)
+
+    tabs = st.tabs([
+        f"All ({n_all})",
+        f"Pending ({n_pending})",
+        f"Keep ({n_keep})",
+        f"Reject ({n_reject})",
+        f"Dupes ({n_dupes})",
+    ])
+
+    filter_keys = ["all", "pending", "keep", "reject", "duplicate"]
+    current_sort = st.session_state.get("sort_by", "score_desc")
+
+    for tab, fk in zip(tabs, filter_keys):
+        with tab:
+            if fk == "all":
+                visible = list(analyses)
+            elif fk == "duplicate":
+                visible = [a for a in analyses if a.is_duplicate]
+            else:
+                visible = [a for a in analyses if a.status == fk]
+
+            visible = sort_analyses(visible, current_sort)
+
+            if not visible:
+                st.markdown(render_empty_state(fk), unsafe_allow_html=True)
+            else:
+                cols = st.columns(4)
+                for i, analysis in enumerate(visible):
+                    render_photo_card(analysis, cols[i % 4])
 
 
 if __name__ == "__main__":
