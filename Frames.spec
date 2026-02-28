@@ -95,7 +95,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Frames.app",
-    icon=None,  # Set to "frames_icon.icns" if you have one
+    icon="frames_icon.icns",
     bundle_identifier="com.frames.app",
     info_plist={
         "NSHighResolutionCapable": True,
