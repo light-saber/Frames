@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from .analysis import check_ollama_alive, run_analysis
 from .export import export_photos
 from .models import (
     DEFAULT_COLOR_SETTINGS,
+    OLLAMA_MODEL,
     RAW_EXTENSIONS,
     THUMB_DIR,
     _state,
@@ -23,17 +26,12 @@ from .models import (
 )
 
 # Resolve frontend dir — works both in development and inside PyInstaller bundle
-import sys as _sys
-
-if getattr(_sys, "frozen", False):
-    # Running inside a PyInstaller bundle; datas land next to the executable
-    FRONTEND_DIR = Path(_sys._MEIPASS) / "frontend"
+if getattr(sys, "frozen", False):
+    FRONTEND_DIR = Path(sys._MEIPASS) / "frontend"
 else:
     FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 app = FastAPI(title="Frames")
-
-# Serve static files (css, js)
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 init_state()
@@ -54,13 +52,40 @@ class SettingsPatch(BaseModel):
     settings: dict
 
 
-class ExportRequest(BaseModel):
-    export_folder: str
-
-
 class ThresholdRequest(BaseModel):
     threshold: int
     mode: str = "pending_only"  # "pending_only" | "all"
+
+
+# ── SSE helper ────────────────────────────────────────────────────────────────
+
+
+async def _run_in_executor_sse(fn, *args):
+    """Run fn(*args) in a thread, yielding SSE data lines from a shared queue.
+
+    fn must accept a progress_callback(done, total, item, error) as its last argument.
+    Yields formatted SSE strings; sends a final ``{"done": true}`` when complete.
+    """
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress_callback(*cb_args):
+        asyncio.run_coroutine_threadsafe(queue.put(cb_args), loop)
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = loop.run_in_executor(executor, fn, *args, progress_callback)
+
+    while True:
+        try:
+            cb_args = await asyncio.wait_for(queue.get(), timeout=0.2)
+            yield f"data: {json.dumps(cb_args)}\n\n"
+        except asyncio.TimeoutError:
+            if future.done():
+                while not queue.empty():
+                    cb_args = queue.get_nowait()
+                    yield f"data: {json.dumps(cb_args)}\n\n"
+                yield 'data: {"done": true}\n\n'
+                break
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -68,8 +93,7 @@ class ThresholdRequest(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    html_path = FRONTEND_DIR / "index.html"
-    return html_path.read_text()
+    return (FRONTEND_DIR / "index.html").read_text()
 
 
 @app.get("/api/status")
@@ -81,7 +105,7 @@ async def status():
 async def ollama_status():
     alive = check_ollama_alive()
     _state["ollama_available"] = alive
-    return {"alive": alive, "model": "qwen2.5vl:3b"}
+    return {"alive": alive, "model": OLLAMA_MODEL}
 
 
 @app.get("/api/photos")
@@ -127,41 +151,69 @@ async def folder_dialog():
 async def analyze_sse():
     folder = _state.get("folder", "")
     use_ai = _state.get("use_ai", False)
-
     if not folder or not Path(folder).is_dir():
         raise HTTPException(400, "No valid folder set")
 
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress_callback(done, total, photo, error):
+        event_data = {"done": done, "total": total}
+        if photo:
+            event_data["photo"] = asdict(photo)
+        if error:
+            event_data["error"] = error
+        asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
+
     async def event_stream():
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        def progress_callback(done, total, photo, error):
-            event_data = {"done": done, "total": total}
-            if photo:
-                event_data["photo"] = asdict(photo)
-            if error:
-                event_data["error"] = error
-            asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
-
-        import concurrent.futures
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = loop.run_in_executor(executor, run_analysis, folder, use_ai, progress_callback)
-
-        # Drain queue until analysis completes
-        while True:
-            try:
-                data = await asyncio.wait_for(queue.get(), timeout=0.2)
-                yield f"data: {json.dumps(data)}\n\n"
-            except asyncio.TimeoutError:
-                if future.done():
-                    # Flush remaining items
-                    while not queue.empty():
-                        data = queue.get_nowait()
-                        yield f"data: {json.dumps(data)}\n\n"
-                    yield 'data: {"done": true}\n\n'
-                    break
+        async for chunk in _drain_queue(queue, future):
+            yield chunk
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/export")
+async def export_sse(export_folder: str):
+    if not Path(export_folder).is_dir():
+        raise HTTPException(400, f"Invalid export folder: {export_folder}")
+    _state["export_folder"] = export_folder
+    analyses = list(_state["analyses"])
+    settings = dict(_state["color_settings"])
+
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress_callback(done, total, filename, error):
+        event_data = {"done": done, "total": total, "filename": filename}
+        if error:
+            event_data["error"] = error
+        asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
+
+    async def event_stream():
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = loop.run_in_executor(
+            executor, export_photos, analyses, export_folder, settings, progress_callback
+        )
+        async for chunk in _drain_queue(queue, future):
+            yield chunk
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _drain_queue(queue: asyncio.Queue, future):
+    """Yield SSE data lines from queue until future completes."""
+    while True:
+        try:
+            data = await asyncio.wait_for(queue.get(), timeout=0.2)
+            yield f"data: {json.dumps(data)}\n\n"
+        except asyncio.TimeoutError:
+            if future.done():
+                while not queue.empty():
+                    yield f"data: {json.dumps(queue.get_nowait())}\n\n"
+                yield 'data: {"done": true}\n\n'
+                break
 
 
 @app.patch("/api/photo/{filename}/status")
@@ -195,14 +247,13 @@ async def reset_settings():
 
 @app.post("/api/batch/threshold")
 async def apply_threshold(req: ThresholdRequest):
-    count = 0
-    for a in _state["analyses"]:
-        if req.mode == "pending_only" and a.status != "pending":
-            continue
+    targets = _state["analyses"] if req.mode == "all" else [
+        a for a in _state["analyses"] if a.status == "pending"
+    ]
+    for a in targets:
         a.status = "keep" if a.overall_score >= req.threshold else "reject"
-        count += 1
     save_session()
-    return {"updated": count}
+    return {"updated": len(targets)}
 
 
 @app.post("/api/batch/keep-all")
@@ -225,44 +276,3 @@ async def reset_all():
 async def set_use_ai(body: dict):
     _state["use_ai"] = bool(body.get("enabled", False))
     return {"use_ai": _state["use_ai"]}
-
-
-@app.get("/api/export")
-async def export_sse(export_folder: str):
-    ep = Path(export_folder)
-    if not ep.is_dir():
-        raise HTTPException(400, f"Invalid export folder: {export_folder}")
-
-    _state["export_folder"] = export_folder
-    analyses = list(_state["analyses"])
-    settings = dict(_state["color_settings"])
-
-    async def event_stream():
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        def progress_callback(done, total, filename, error):
-            event_data = {"done": done, "total": total, "filename": filename}
-            if error:
-                event_data["error"] = error
-            asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
-
-        import concurrent.futures
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = loop.run_in_executor(
-            executor, export_photos, analyses, export_folder, settings, progress_callback
-        )
-
-        while True:
-            try:
-                data = await asyncio.wait_for(queue.get(), timeout=0.2)
-                yield f"data: {json.dumps(data)}\n\n"
-            except asyncio.TimeoutError:
-                if future.done():
-                    while not queue.empty():
-                        data = queue.get_nowait()
-                        yield f"data: {json.dumps(data)}\n\n"
-                    yield 'data: {"done": true}\n\n'
-                    break
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
