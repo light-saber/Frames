@@ -21,52 +21,78 @@ A native macOS photo culling and colour correction tool for Nikon RAW files. Poi
 
 ## Requirements
 
-- macOS 12 or later
-- Python 3.9 or later
+- macOS 12 Monterey or later
+- Python 3.11 or later (3.14 recommended — install via Homebrew)
+- [Homebrew](https://brew.sh) (recommended for Python and Ollama)
 - Supported RAW formats: `.nef` `.nrw` `.raw` `.cr2` `.cr3` `.arw` `.dng`
 
 > **Nikon Zf note:** The Nikon Zf (released September 2023) is not yet in LibRaw 0.22.0's camera database. Frames automatically falls back to the full-resolution embedded JPEG (6048×4032) inside the NEF — same pixel dimensions as the sensor, fully usable for culling and export.
 
 ---
 
-## Setup
+## Installation
 
-Run the one-time setup script from the project folder:
+### Option A — Build from source (recommended)
 
-```bash
-bash setup.sh
-```
-
-This will:
-1. Verify Python 3.9+ is present
-2. Create a `.venv` virtual environment
-3. Install all Python dependencies (FastAPI, uvicorn, pywebview, rawpy, OpenCV, Pillow, NumPy)
-
----
-
-## Launch (dev)
+**1. Install Python 3.11+ via Homebrew**
 
 ```bash
-source .venv/bin/activate && python main.py
+brew install python@3.14
 ```
 
-The app opens in a native macOS window via WebKit. No browser needed.
-
----
-
-## Build a standalone .app
+Check it's available:
 
 ```bash
-bash build.sh
+/opt/homebrew/bin/python3.14 --version
+# Python 3.14.x
 ```
 
-Produces `dist/Frames.app`. To install system-wide:
+**2. Clone the repo**
+
+```bash
+git clone https://github.com/light-saber/Frames.git
+cd Frames
+```
+
+**3. Create a virtual environment and install dependencies**
+
+```bash
+/opt/homebrew/bin/python3.14 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+```
+
+**4. Build the app**
+
+```bash
+.venv/bin/pyinstaller Frames.spec --clean --noconfirm
+```
+
+This produces `dist/Frames.app`.
+
+**5. Install system-wide**
 
 ```bash
 cp -r dist/Frames.app /Applications/
 ```
 
 Then launch from Finder or Spotlight like any other Mac app.
+
+---
+
+### Option B — Run in dev mode (no build step)
+
+Skip the PyInstaller step entirely — run directly from source:
+
+```bash
+/opt/homebrew/bin/python3.14 -m venv .venv
+.venv/bin/pip install --upgrade pip
+.venv/bin/pip install -r requirements.txt
+source .venv/bin/activate
+python main.py
+```
+
+The app opens in a native macOS window via WebKit. Useful for development and testing.
 
 ---
 
