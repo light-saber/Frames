@@ -78,9 +78,30 @@
       <!-- Export section -->
       <div id="export-section" class="sidebar-section" style="display:none;">
         <hr class="divider">
-        <div class="section-label">Export folder</div>
+        <div class="section-label">Export</div>
+
+        <label class="toggle-row">
+          <input type="checkbox" id="enhance-toggle">
+          <span class="toggle-label">✨ Auto enhance colours</span>
+        </label>
+
+        <div class="format-row">
+          <button id="fmt-tiff" class="fmt-btn active">TIFF</button>
+          <button id="fmt-jpeg" class="fmt-btn">JPEG</button>
+        </div>
+
+        <div id="quality-row" style="display:none;">
+          <div class="slider-row">
+            <span class="slider-label">Quality</span>
+            <input type="range" id="jpeg-quality" min="60" max="100" value="90" class="slider">
+            <span id="jpeg-quality-val" class="slider-value">90</span>
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:10px;">Export folder</div>
         <div class="folder-row">
-          <input id="export-input" type="text" placeholder="/path/to/export" class="text-input" spellcheck="false">
+          <input id="export-input" type="text" placeholder="/path/to/export"
+                 class="text-input" spellcheck="false">
           <button id="browse-export-btn" class="icon-btn" title="Open folder picker">📂</button>
         </div>
         <button id="export-btn" class="primary-btn">⬇ Export kept photos</button>

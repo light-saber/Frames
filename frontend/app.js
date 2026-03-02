@@ -10,6 +10,8 @@ const state = {
   colorSettings: null,
 };
 
+let exportFormat = 'tiff';
+
 const EMPTY_STATES = {
   pending:   ['Nothing left to decide',  'All photos have been marked keep or reject.'],
   keep:      ['No photos kept yet',       'Mark photos with ✓ Keep to see them here.'],
@@ -74,6 +76,24 @@ function setupSidebar() {
   });
 
   $('export-btn').addEventListener('click', startExport);
+
+  $('fmt-tiff').addEventListener('click', () => {
+    exportFormat = 'tiff';
+    $('fmt-tiff').classList.add('active');
+    $('fmt-jpeg').classList.remove('active');
+    $('quality-row').style.display = 'none';
+  });
+
+  $('fmt-jpeg').addEventListener('click', () => {
+    exportFormat = 'jpeg';
+    $('fmt-jpeg').classList.add('active');
+    $('fmt-tiff').classList.remove('active');
+    $('quality-row').style.display = 'block';
+  });
+
+  $('jpeg-quality').addEventListener('input', e => {
+    $('jpeg-quality-val').textContent = e.target.value;
+  });
 
   $('recheck-ollama-btn').addEventListener('click', checkOllamaStatus);
 
@@ -269,7 +289,10 @@ async function startExport() {
   exportProgressBar.style.setProperty('--progress', '0%');
   exportLabel.textContent = 'Starting export…';
 
-  const url = `/api/export?export_folder=${encodeURIComponent(exportFolder)}`;
+  const enhance = $('enhance-toggle').checked;
+  const quality = $('jpeg-quality').value;
+  const url = `/api/export?export_folder=${encodeURIComponent(exportFolder)}`
+            + `&enhance=${enhance}&format=${exportFormat}&quality=${quality}`;
   const es = new EventSource(url);
 
   es.onmessage = e => {

@@ -681,3 +681,65 @@ details[open] .expander-summary::before { transform: rotate(90deg); }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-card); border-radius: 3px; }
+
+/* ── Export controls ──────────────────────────────────────────────────────── */
+
+.format-row {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.fmt-btn {
+  flex: 1;
+  padding: 5px 0;
+  background: var(--bg-app);
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-family: 'DM Mono', monospace;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.fmt-btn.active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: #111;
+  font-weight: 600;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.slider-label {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.slider-value {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  width: 26px;
+  text-align: right;
+  flex-shrink: 0;
+}

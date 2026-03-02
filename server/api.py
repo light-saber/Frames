@@ -175,7 +175,12 @@ async def analyze_sse():
 
 
 @app.get("/api/export")
-async def export_sse(export_folder: str):
+async def export_sse(
+    export_folder: str,
+    enhance: bool = False,
+    format: str = "tiff",
+    quality: int = 90,
+):
     if not Path(export_folder).is_dir():
         raise HTTPException(400, f"Invalid export folder: {export_folder}")
     _state["export_folder"] = export_folder
@@ -194,7 +199,8 @@ async def export_sse(export_folder: str):
     async def event_stream():
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = loop.run_in_executor(
-            executor, export_photos, analyses, export_folder, settings, progress_callback
+            executor, export_photos, analyses, export_folder, settings,
+            enhance, format, quality, progress_callback
         )
         async for chunk in _drain_queue(queue, future):
             yield chunk
