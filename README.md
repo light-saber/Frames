@@ -1,6 +1,6 @@
 # Frames
 
-A native macOS photo culling and colour correction tool for Nikon RAW files. Point it at a folder of NEFs, score every shot for sharpness, exposure, and duplicates, then export your selects as colour-corrected TIFFs — fully offline, no browser required.
+A native macOS photo culling and colour correction tool for Nikon RAW files. Point it at a folder of NEFs, score every shot for sharpness, exposure, and duplicates, then export your selects as colour-corrected TIFFs or JPEGs — fully offline, no browser required.
 
 ---
 
@@ -12,8 +12,9 @@ A native macOS photo culling and colour correction tool for Nikon RAW files. Poi
 - **Duplicate detection** — Perceptual hashing (16×16) with Hamming distance; auto-rejects near-identical frames
 - **AI scoring (optional)** — Qwen2.5-VL 3B via Ollama scores composition, lighting, and subject clarity; blends into the overall score when enabled
 - **Colour correction pipeline** — Highlight recovery, shadow lift, brightness/contrast, saturation boost, unsharp mask sharpening — applied on export, not preview
+- **Auto colour enhance** — One-click adaptive enhancement: grey-world white balance, CLAHE contrast, saturation boost (×1.15), and a gentle S-curve tonemap; applied before manual colour correction
+- **TIFF or JPEG export** — Choose output format; JPEG quality is configurable from 60–100
 - **Finder folder picker** — Native macOS folder dialog via the 📂 button
-- **TIFF export** — Colour-corrected TIFFs named `{original}_edited.tiff`
 - **Session persistence** — Analysis results and keep/reject decisions survive app restarts
 - **Fully local** — No internet connection, no cloud, no account
 
@@ -104,8 +105,8 @@ The app opens in a native macOS window via WebKit. Useful for development and te
 4. **Auto-cull** — Use **Apply threshold** to bulk-mark photos above/below a score (default 65)
 5. **Fine-tune** — Click **✓ Keep** or **✗ Reject** on any card. Use the filter tabs to focus on a subset
 6. **Adjust colour** — Tweak the Color Settings sliders in the sidebar (applied at export time, not to the preview)
-7. **Set export folder** — Enter the destination path, or click 📂 to pick with Finder
-8. **Export** — Click **⬇ Export kept photos**. Each kept photo is colour-corrected and saved as `{name}_edited.tiff`
+7. **Set export options** — Toggle **✨ Auto enhance colours** for adaptive per-photo enhancement. Choose **TIFF** or **JPEG** (set quality 60–100). Enter the destination path or click 📂
+8. **Export** — Click **⬇ Export kept photos**. Files are saved as `{name}_edited.tiff` or `{name}_edited.jpg`
 
 ---
 
@@ -149,7 +150,7 @@ When Frames launches it automatically starts `ollama serve` if it isn't already 
 | Shadow lift | 0.03 | 0.0 → 0.15 |
 | Sharpening | 0.3 | 0.0 → 1.0 |
 
-All adjustments are applied in sequence on a `float32` [0, 1] image and exported as TIFF.
+All adjustments are applied in sequence on a `float32` [0, 1] image. When **Auto enhance** is on, it runs first (grey-world WB → CLAHE → saturation → S-curve), then manual corrections are applied on top.
 
 ---
 
@@ -158,7 +159,7 @@ All adjustments are applied in sequence on a `float32` [0, 1] image and exported
 - **Colour science** — Nikon Picture Control profiles (Vivid, Portrait, etc.) are not replicated. Export colours will differ from NX Studio's rendering
 - **High-ISO noise** — Heavy noise can reduce sharpness scores due to the Laplacian variance method picking up texture as signal
 - **Performance** — First run on 200 photos takes ~10–15 min on Intel Mac; much faster on M-series
-- **Output format** — Exports are standard TIFFs, not NX Studio native files. Compatible with Lightroom, Affinity Photo, and any TIFF editor
+- **Output format** — Exports are standard TIFFs or JPEGs, not NX Studio native files. Compatible with Lightroom, Affinity Photo, and any TIFF/JPEG editor
 
 ---
 
