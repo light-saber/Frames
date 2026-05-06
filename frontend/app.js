@@ -476,8 +476,8 @@ function buildCard(photo) {
   card.className = `photo-card status-${photo.status}`;
   card.dataset.filename = photo.filename;
 
-  const fname = photo.filename.length > 22
-    ? photo.filename.slice(0, 22) + '…'
+  const fname = photo.filename.length > 28
+    ? photo.filename.slice(0, 28) + '…'
     : photo.filename;
 
   const dupHtml = photo.is_duplicate
@@ -497,6 +497,9 @@ function buildCard(photo) {
     metrics += metricRow('AI', photo.ai_score, 'var(--purple-dupe)');
   }
 
+  const aiReasonHtml = photo.ai_reason
+    ? `<div class="ai-reason">${photo.ai_reason}</div>` : '';
+
   const keepLabel = photo.status === 'keep'   ? '↩ kept'  : '✓ Keep';
   const rejLabel  = photo.status === 'reject' ? '↩ unrej' : '✗ Reject';
   const keepActive  = photo.status === 'keep'   ? 'active-keep'   : '';
@@ -507,7 +510,7 @@ function buildCard(photo) {
       <img src="/api/photo/${encodeURIComponent(photo.filename)}/thumbnail"
            alt="${photo.filename}" loading="lazy">
       <div class="score-overlay" style="color:${sColor};">${photo.overall_score.toFixed(0)}</div>
-      <div class="card-metrics">${metrics}</div>
+      <div class="card-metrics">${metrics}${aiReasonHtml}</div>
     </div>
     <div class="card-footer">
       <span class="filename">${fname}</span>${dupHtml}${aiErrHtml}
