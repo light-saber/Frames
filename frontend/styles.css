@@ -603,6 +603,19 @@ details[open] .expander-summary::before { transform: rotate(90deg); }
   margin-left: 4px;
 }
 
+.ai-error-tag {
+  background: #2a1a0a;
+  color: var(--amber-pending);
+  border: 1px solid #92400e;
+  border-radius: 20px;
+  padding: 1px 7px;
+  font-size: 0.6rem;
+  font-family: 'DM Mono', monospace;
+  flex-shrink: 0;
+  margin-left: 4px;
+  cursor: help;
+}
+
 .card-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

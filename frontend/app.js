@@ -482,12 +482,18 @@ function buildCard(photo) {
 
   const dupHtml = photo.is_duplicate
     ? `<span class="dup-tag">dup</span>` : '';
+  const aiErrHtml = photo.ai_error
+    ? `<span class="ai-error-tag" title="${photo.ai_error.replace(/"/g, '&quot;')}">AI ✕</span>` : '';
 
   const sColor = scoreColor(photo.overall_score);
 
   let metrics = metricRow('S', photo.sharpness, 'var(--accent-gold)');
   metrics += metricRow('E', photo.exposure, 'var(--blue-exposure)');
-  if (photo.ai_score != null) {
+  if (photo.ai_composition != null) {
+    metrics += metricRow('C', photo.ai_composition, 'var(--purple-dupe)');
+    metrics += metricRow('L', photo.ai_lighting, '#7dd3fc');
+    metrics += metricRow('F', photo.ai_subject_clarity, '#86efac');
+  } else if (photo.ai_score != null) {
     metrics += metricRow('AI', photo.ai_score, 'var(--purple-dupe)');
   }
 
@@ -504,7 +510,7 @@ function buildCard(photo) {
       <div class="card-metrics">${metrics}</div>
     </div>
     <div class="card-footer">
-      <span class="filename">${fname}</span>${dupHtml}
+      <span class="filename">${fname}</span>${dupHtml}${aiErrHtml}
     </div>
     <div class="card-actions">
       <button class="card-btn ${keepActive}" data-action="keep">${keepLabel}</button>

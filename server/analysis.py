@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import re
 import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
@@ -62,8 +63,12 @@ def check_ollama_alive() -> bool:
         return False
 
 
-def score_photo_with_ai(thumbnail_path: str) -> tuple[Optional[float], Optional[str]]:
-    try:
+def score_photo_with_ai(
+    thumbnail_path: str,
+) -> tuple[Optional[float], Optional[str], Optional[float], Optional[float], Optional[float], Optional[str]]:
+    """Returns (ai_score, reason, composition, lighting, subject_clarity, error_or_None)."""
+
+    def _call() -> dict:
         with open(thumbnail_path, "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
 
@@ -74,7 +79,7 @@ def score_photo_with_ai(thumbnail_path: str) -> tuple[Optional[float], Optional[
             '  "lighting": <integer 0-100>,\n'
             '  "subject_clarity": <integer 0-100>,\n'
             '  "overall": <integer 0-100>,\n'
-            '  "reason": "<one sentence max 20 words>"\n'
+            '  "reason": "<one to two sentences, max 40 words>"\n'
             "Do not include any text before or after the JSON.\n"
             "Score 0=very poor, 50=average, 100=excellent."
         )
@@ -84,7 +89,7 @@ def score_photo_with_ai(thumbnail_path: str) -> tuple[Optional[float], Optional[
             "prompt": prompt,
             "images": [img_b64],
             "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 80, "num_ctx": 512},
+            "options": {"temperature": 0.1, "num_predict": 150, "num_ctx": 2048},
         }).encode()
 
         req = urllib.request.Request(
@@ -93,25 +98,30 @@ def score_photo_with_ai(thumbnail_path: str) -> tuple[Optional[float], Optional[
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             raw = json.loads(resp.read())
 
         response_text = raw.get("response", "").strip()
-        if response_text.startswith("```"):
-            lines = response_text.splitlines()
-            response_text = "\n".join(l for l in lines if not l.startswith("```")).strip()
+        match = re.search(r"\{[^{}]+\}", response_text, re.DOTALL)
+        if match:
+            response_text = match.group(0)
+        return json.loads(response_text)
 
-        data = json.loads(response_text)
-        overall = float(data["overall"])
-        composition = float(data["composition"])
-        lighting = float(data["lighting"])
-        subject_clarity = float(data["subject_clarity"])
-        reason = str(data.get("reason", ""))
+    last_error: str = "unknown error"
+    for _ in range(2):
+        try:
+            data = _call()
+            overall = float(data["overall"])
+            composition = float(data["composition"])
+            lighting = float(data["lighting"])
+            subject_clarity = float(data["subject_clarity"])
+            reason = str(data.get("reason", ""))
+            ai_score = overall * 0.50 + composition * 0.20 + lighting * 0.20 + subject_clarity * 0.10
+            return float(ai_score), reason, composition, lighting, subject_clarity, None
+        except Exception as e:
+            last_error = str(e)
 
-        ai_score = overall * 0.50 + composition * 0.20 + lighting * 0.20 + subject_clarity * 0.10
-        return float(ai_score), reason
-    except Exception:
-        return None, None
+    return None, None, None, None, None, last_error
 
 
 def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = False) -> PhotoAnalysis:
@@ -122,7 +132,7 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
 
     pil_img = Image.fromarray(rgb)
     thumb = pil_img.copy()
-    thumb.thumbnail((480, 320), Image.LANCZOS)
+    thumb.thumbnail((768, 512), Image.LANCZOS)
     thumb_path = str(THUMB_DIR / f"{stem}.jpg")
     thumb.save(thumb_path, "JPEG", quality=85)
 
@@ -148,9 +158,9 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
     saturation = float(hsv[:, :, 1].mean() / 2.55)
 
     # AI scoring
-    ai_score, ai_reason = (None, None)
+    ai_score = ai_reason = ai_composition = ai_lighting = ai_subject_clarity = ai_error = None
     if use_ai:
-        ai_score, ai_reason = score_photo_with_ai(thumb_path)
+        ai_score, ai_reason, ai_composition, ai_lighting, ai_subject_clarity, ai_error = score_photo_with_ai(thumb_path)
 
     # Overall score
     sat_fitness = float(max(0, min(100, 100 - abs(saturation - 42) * 2)))
@@ -184,6 +194,10 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
         thumbnail_path=thumb_path,
         ai_score=ai_score,
         ai_reason=ai_reason,
+        ai_composition=ai_composition,
+        ai_lighting=ai_lighting,
+        ai_subject_clarity=ai_subject_clarity,
+        ai_error=ai_error,
     )
 
 
