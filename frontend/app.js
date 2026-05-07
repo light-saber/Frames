@@ -504,10 +504,8 @@ function buildCard(photo) {
   const aiReasonHtml = photo.ai_reason
     ? `<div class="ai-reason">${photo.ai_reason}</div>` : '';
 
-  const keepLabel = photo.status === 'keep'   ? '↩ kept'  : '✓ Keep';
-  const rejLabel  = photo.status === 'reject' ? '↩ unrej' : '✗ Reject';
-  const keepActive  = photo.status === 'keep'   ? 'active-keep'   : '';
-  const rejActive   = photo.status === 'reject' ? 'active-reject'  : '';
+  const keepActive = photo.status === 'keep'   ? 'active-keep'   : '';
+  const rejActive  = photo.status === 'reject' ? 'active-reject'  : '';
 
   card.innerHTML = `
     <div class="thumb-wrap">
@@ -520,8 +518,8 @@ function buildCard(photo) {
       <span class="filename">${fname}</span>${dupHtml}${aiErrHtml}${aiRejectHtml}
     </div>
     <div class="card-actions">
-      <button class="card-btn ${keepActive}" data-action="keep">${keepLabel}</button>
-      <button class="card-btn ${rejActive}"  data-action="reject">${rejLabel}</button>
+      <button class="card-btn ${keepActive}" data-action="keep">✓ Keep</button>
+      <button class="card-btn ${rejActive}"  data-action="reject">✗ Reject</button>
     </div>`;
 
   // Thumbnail click opens detail panel
@@ -549,8 +547,8 @@ async function toggleStatus(photo, action, card) {
 
   // Update button labels/classes
   const [keepBtn, rejBtn] = card.querySelectorAll('.card-btn');
-  keepBtn.textContent  = newStatus === 'keep'   ? '↩ kept'  : '✓ Keep';
-  rejBtn.textContent   = newStatus === 'reject' ? '↩ unrej' : '✗ Reject';
+  keepBtn.textContent = '✓ Keep';
+  rejBtn.textContent  = '✗ Reject';
   keepBtn.className = `card-btn${newStatus === 'keep'   ? ' active-keep'   : ''}`;
   rejBtn.className  = `card-btn${newStatus === 'reject' ? ' active-reject' : ''}`;
 
@@ -636,8 +634,8 @@ function closePanel() {
 function updatePanelButtons(photo) {
   const keepBtn = $('panel-keep-btn');
   const rejBtn  = $('panel-reject-btn');
-  keepBtn.textContent = photo.status === 'keep'   ? '↩ Kept'   : '✓ Keep';
-  rejBtn.textContent  = photo.status === 'reject' ? '↩ Undo'   : '✗ Reject';
+  keepBtn.textContent = '✓ Keep';
+  rejBtn.textContent  = '✗ Reject';
   keepBtn.className = `card-btn${photo.status === 'keep'   ? ' active-keep'   : ''}`;
   rejBtn.className  = `card-btn${photo.status === 'reject' ? ' active-reject' : ''}`;
 }
@@ -659,8 +657,8 @@ async function panelToggleStatus(action) {
     if (c.dataset.filename === photo.filename) {
       c.className = `photo-card status-${newStatus}`;
       const [keepBtn, rejBtn] = c.querySelectorAll('.card-btn');
-      if (keepBtn) { keepBtn.textContent = newStatus === 'keep'   ? '↩ kept'  : '✓ Keep';   keepBtn.className = `card-btn${newStatus === 'keep'   ? ' active-keep'   : ''}`; }
-      if (rejBtn)  { rejBtn.textContent  = newStatus === 'reject' ? '↩ unrej' : '✗ Reject'; rejBtn.className  = `card-btn${newStatus === 'reject' ? ' active-reject' : ''}`; }
+      if (keepBtn) { keepBtn.textContent = '✓ Keep';   keepBtn.className = `card-btn${newStatus === 'keep'   ? ' active-keep'   : ''}`; }
+      if (rejBtn)  { rejBtn.textContent  = '✗ Reject'; rejBtn.className  = `card-btn${newStatus === 'reject' ? ' active-reject' : ''}`; }
       break;
     }
   }
