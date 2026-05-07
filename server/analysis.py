@@ -70,7 +70,11 @@ def score_photo_with_ai(
 
     def _call() -> dict:
         with open(thumbnail_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
+            img = Image.open(f).copy()
+        img.thumbnail((384, 256), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=80)
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
 
         prompt = (
             "You are a photography expert scoring RAW photos for technical quality.\n"
@@ -147,7 +151,7 @@ def score_photo_with_ai(
     return None, None, None, None, None, None, last_error
 
 
-def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = False) -> PhotoAnalysis:
+def analyse_photo(path: str, existing_hashes: dict[str, str]) -> PhotoAnalysis:
     filename = Path(path).name
     stem = Path(path).stem
 
@@ -180,19 +184,10 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     saturation = float(hsv[:, :, 1].mean() / 2.55)
 
-    # AI scoring
+    # Technical-only score; AI pass runs separately via run_ai_scoring()
     ai_score = ai_reason = ai_composition = ai_lighting = ai_subject_clarity = ai_usable = ai_error = None
-    if use_ai:
-        ai_score, ai_reason, ai_composition, ai_lighting, ai_subject_clarity, ai_usable, ai_error = score_photo_with_ai(thumb_path)
-
-    # Overall score
     sat_fitness = float(max(0, min(100, 100 - abs(saturation - 42) * 2)))
-    if ai_score is not None:
-        overall_score = float(sharpness * 0.35 + exposure * 0.20 + sat_fitness * 0.10 + ai_score * 0.35)
-        if ai_usable is False:
-            overall_score = min(overall_score, 35.0)
-    else:
-        overall_score = float(sharpness * 0.55 + exposure * 0.30 + sat_fitness * 0.15)
+    overall_score = float(sharpness * 0.55 + exposure * 0.30 + sat_fitness * 0.15)
 
     # Duplicate detection
     gray_full = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
@@ -229,7 +224,6 @@ def analyse_photo(path: str, existing_hashes: dict[str, str], use_ai: bool = Fal
 
 def run_analysis(
     folder: str,
-    use_ai: bool = False,
     progress_callback: Optional[Callable[[int, int, PhotoAnalysis | None, str | None], None]] = None,
 ) -> list[PhotoAnalysis]:
     """
@@ -246,7 +240,7 @@ def run_analysis(
 
     for i, raw_file in enumerate(raw_files):
         try:
-            analysis = analyse_photo(str(raw_file), hashes, use_ai=use_ai)
+            analysis = analyse_photo(str(raw_file), hashes)
             results.append(analysis)
             if progress_callback:
                 progress_callback(i + 1, total, analysis, None)
@@ -263,3 +257,38 @@ def run_analysis(
     _state["analyzed"] = True
     save_session()
     return results
+
+
+def run_ai_scoring(
+    analyses: list[PhotoAnalysis],
+    progress_callback: Optional[Callable[[int, int, PhotoAnalysis | None, str | None], None]] = None,
+) -> None:
+    """Second-pass AI scoring over already-analysed photos. Updates scores in-place."""
+    total = len(analyses)
+    for i, photo in enumerate(analyses):
+        try:
+            ai_score, ai_reason, ai_composition, ai_lighting, ai_subject_clarity, ai_usable, ai_error = score_photo_with_ai(photo.thumbnail_path)
+            photo.ai_score = ai_score
+            photo.ai_reason = ai_reason
+            photo.ai_composition = ai_composition
+            photo.ai_lighting = ai_lighting
+            photo.ai_subject_clarity = ai_subject_clarity
+            photo.ai_usable = ai_usable
+            photo.ai_error = ai_error
+
+            if ai_score is not None:
+                sat_fitness = float(max(0, min(100, 100 - abs(photo.saturation - 42) * 2)))
+                overall = float(photo.sharpness * 0.35 + photo.exposure * 0.20 + sat_fitness * 0.10 + ai_score * 0.35)
+                if ai_usable is False:
+                    overall = min(overall, 35.0)
+                photo.overall_score = overall
+        except Exception as e:
+            if progress_callback:
+                progress_callback(i + 1, total, None, f"AI scoring failed for {photo.filename}: {e}")
+            continue
+
+        if progress_callback:
+            progress_callback(i + 1, total, photo, None)
+
+    _state["analyses"].sort(key=lambda x: x.overall_score, reverse=True)
+    save_session()

@@ -28,7 +28,7 @@ A native macOS photo culling and colour correction tool for RAW files. Point it 
 - [Homebrew](https://brew.sh) (recommended for Python and Ollama)
 - Supported RAW formats: `.nef` `.nrw` `.raw` `.cr2` `.cr3` `.arw` `.dng`
 
-> **Nikon Zf note:** The Nikon Zf (released September 2023) is not yet in LibRaw 0.22.0's camera database. Frames automatically falls back to the full-resolution embedded JPEG (6048×4032) inside the NEF — same pixel dimensions as the sensor, fully usable for culling and export.
+> **Nikon Zf note:** The Nikon Zf is supported in LibRaw 0.22.0 (bundled with rawpy 0.26+). Standard NEF files decode natively. The exception is **HE/HE\* lossless compressed** NEFs — LibRaw does not yet decode those formats, so Frames falls back to the full-resolution embedded JPEG (6048×4032) inside the file, which has the same pixel dimensions and is fully usable for culling and export.
 
 ---
 
@@ -163,17 +163,19 @@ All adjustments are applied in sequence on a `float32` [0, 1] image. When **Auto
 
 ## Tech Stack
 
-| Layer | Library |
-|-------|---------|
-| Window | [pywebview](https://pywebview.flowrl.com) (WKWebView) |
-| Backend | [FastAPI](https://fastapi.tiangolo.com) + [uvicorn](https://www.uvicorn.org) |
-| UI | Vanilla JS + HTML/CSS (dark/gold theme) |
-| RAW decoding | [rawpy](https://pypi.org/project/rawpy/) + LibRaw |
-| Image processing | [OpenCV](https://pypi.org/project/opencv-python-headless/), [Pillow](https://python-pillow.org) |
-| Numerics | [NumPy](https://numpy.org) |
-| Folder picker | macOS `osascript` (AppleScript) |
-| AI scoring | [Ollama](https://ollama.com) + Qwen2.5-VL 3B (optional) |
-| Distribution | [PyInstaller](https://pyinstaller.org) |
+| Layer | Library | Version |
+|-------|---------|---------|
+| Window | [pywebview](https://pywebview.flowrl.com) (WKWebView on macOS) | ≥ 4.4 |
+| Backend | [FastAPI](https://fastapi.tiangolo.com) + [uvicorn](https://www.uvicorn.org) | ≥ 0.111 / ≥ 0.29 |
+| Request validation | [Pydantic](https://docs.pydantic.dev) (via FastAPI) | v2 |
+| Streaming | SSE (EventSource) over FastAPI `StreamingResponse`; `asyncio` + `concurrent.futures` for non-blocking analysis | stdlib |
+| UI | Vanilla JS + HTML/CSS (no framework, dark/gold theme) | — |
+| RAW decoding | [rawpy](https://pypi.org/project/rawpy/) + LibRaw 0.22 | ≥ 0.26 |
+| Image processing | [OpenCV](https://pypi.org/project/opencv-python-headless/) (headless), [Pillow](https://python-pillow.org) | ≥ 4.9 / ≥ 10.0 |
+| Numerics | [NumPy](https://numpy.org) | ≥ 1.26 |
+| Folder picker | macOS `osascript` (AppleScript via `subprocess`) | — |
+| AI scoring | [Ollama](https://ollama.com) HTTP API + `qwen2.5vl:3b` (optional second pass) | — |
+| Distribution | [PyInstaller](https://pyinstaller.org) | ≥ 6.5 |
 
 ---
 
@@ -185,5 +187,6 @@ All adjustments are applied in sequence on a `float32` [0, 1] image. When **Auto
 - **[Pillow](https://github.com/python-pillow/Pillow)** — HPND — image I/O and resizing
 - **[NumPy](https://github.com/numpy/numpy)** — BSD 3-Clause — numerical array operations
 - **[FastAPI](https://github.com/tiangolo/fastapi)** — MIT — modern Python web framework
+- **[Pydantic](https://github.com/pydantic/pydantic)** — MIT — request body validation
 - **[pywebview](https://github.com/r0x0r/pywebview)** — BSD 3-Clause — native window wrapper for web content
 - **[DM Serif Display](https://fonts.google.com/specimen/DM+Serif+Display)** & **[DM Mono](https://fonts.google.com/specimen/DM+Mono)** — SIL Open Font License — typefaces via Google Fonts

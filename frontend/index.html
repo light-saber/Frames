@@ -34,19 +34,17 @@
 
       <!-- AI Scoring section -->
       <div id="ai-section" class="sidebar-section" style="display:none;">
-        <details id="ai-expander">
-          <summary class="expander-summary">AI Scoring</summary>
-          <div class="expander-body">
-            <div class="ai-status-row">
-              <span id="ollama-status-dot" class="status-dot red">● Ollama not detected</span>
-              <button id="recheck-ollama-btn" class="small-btn" title="Recheck">↺</button>
-            </div>
-            <label class="checkbox-label">
-              <input id="use-ai-checkbox" type="checkbox" disabled>
-              Enable AI scoring (Qwen2.5-VL 3B)
-            </label>
-          </div>
-        </details>
+        <hr class="divider">
+        <div class="section-label">AI Scoring</div>
+        <div class="ai-status-row">
+          <span id="ollama-status-dot" class="status-dot red">● Ollama not detected</span>
+          <button id="recheck-ollama-btn" class="small-btn" title="Recheck">↺</button>
+        </div>
+        <button id="run-ai-btn" class="secondary-btn" disabled>✦ Run AI scoring</button>
+        <div id="ai-progress-wrap" style="display:none; margin-top:8px;">
+          <div id="ai-progress-bar" class="progress-bar"></div>
+          <div id="ai-progress-label" class="progress-label"></div>
+        </div>
       </div>
 
       <!-- Batch actions (post-analysis) -->

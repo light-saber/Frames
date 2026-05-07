@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .analysis import check_ollama_alive, run_analysis
+from .analysis import check_ollama_alive, run_ai_scoring, run_analysis
 from .export import export_photos
 from .models import (
     DEFAULT_COLOR_SETTINGS,
@@ -150,7 +150,6 @@ async def folder_dialog():
 @app.get("/api/analyze")
 async def analyze_sse():
     folder = _state.get("folder", "")
-    use_ai = _state.get("use_ai", False)
     if not folder or not Path(folder).is_dir():
         raise HTTPException(400, "No valid folder set")
 
@@ -167,7 +166,33 @@ async def analyze_sse():
 
     async def event_stream():
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = loop.run_in_executor(executor, run_analysis, folder, use_ai, progress_callback)
+        future = loop.run_in_executor(executor, run_analysis, folder, progress_callback)
+        async for chunk in _drain_queue(queue, future):
+            yield chunk
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/analyze-ai")
+async def analyze_ai_sse():
+    analyses = list(_state["analyses"])
+    if not analyses:
+        raise HTTPException(400, "No photos analysed yet")
+
+    loop = asyncio.get_event_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress_callback(done, total, photo, error):
+        event_data = {"done": done, "total": total}
+        if photo:
+            event_data["photo"] = asdict(photo)
+        if error:
+            event_data["error"] = error
+        asyncio.run_coroutine_threadsafe(queue.put(event_data), loop)
+
+    async def event_stream():
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = loop.run_in_executor(executor, run_ai_scoring, analyses, progress_callback)
         async for chunk in _drain_queue(queue, future):
             yield chunk
 

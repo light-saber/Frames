@@ -34,6 +34,9 @@ const progressLabel   = $('progress-label');
 const exportOverlay   = $('export-overlay');
 const exportProgressBar = $('export-progress-bar');
 const exportLabel     = $('export-label');
+const aiProgressWrap  = $('ai-progress-wrap');
+const aiProgressBar   = $('ai-progress-bar');
+const aiProgressLabel = $('ai-progress-label');
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -99,13 +102,7 @@ function setupSidebar() {
 
   $('recheck-ollama-btn').addEventListener('click', checkOllamaStatus);
 
-  $('use-ai-checkbox').addEventListener('change', async e => {
-    await fetch('/api/use-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: e.target.checked }),
-    });
-  });
+  $('run-ai-btn').addEventListener('click', startAiScoring);
 
   $('threshold-slider').addEventListener('input', e => {
     $('threshold-val').textContent = e.target.value;
@@ -168,6 +165,7 @@ async function onFolderSet(path) {
     $('ai-section').style.display = 'block';
   } else {
     $('analyse-btn').disabled = true;
+    $('ai-section').style.display = 'none';
   }
 }
 
@@ -178,16 +176,16 @@ async function checkOllamaStatus() {
     const res = await fetch('/api/ollama-status');
     const data = await res.json();
     const dot = $('ollama-status-dot');
-    const cb  = $('use-ai-checkbox');
+    const btn = $('run-ai-btn');
     if (data.alive) {
       dot.className = 'status-dot green';
       dot.textContent = '● Ollama running';
-      cb.disabled = false;
+      // Enable only when photos have been analysed
+      btn.disabled = state.photos.length === 0;
     } else {
       dot.className = 'status-dot red';
       dot.textContent = '● Ollama not detected';
-      cb.disabled = true;
-      cb.checked = false;
+      btn.disabled = true;
     }
   } catch (e) {
     // server not ready yet
@@ -266,6 +264,8 @@ function finishAnalysis() {
   $('analyse-btn').disabled = false;
   progressWrap.style.display = 'none';
   $('batch-section').style.display = 'block';
+  // Enable AI scoring button if Ollama is available
+  checkOllamaStatus();
   updateExportSection();
   renderStatsStrip();
   renderGrid();
@@ -276,6 +276,66 @@ function setProgress(done, total, label) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   progressBar.style.setProperty('--progress', `${pct}%`);
   progressLabel.textContent = label;
+}
+
+// ── AI scoring (second pass) ──────────────────────────────────────────────────
+
+function startAiScoring() {
+  const btn = $('run-ai-btn');
+  btn.disabled = true;
+  btn.textContent = '↺ Scoring…';
+  aiProgressWrap.style.display = 'block';
+  aiProgressBar.style.setProperty('--progress', '0%');
+  aiProgressLabel.textContent = 'Starting AI scoring…';
+
+  const es = new EventSource('/api/analyze-ai');
+  es.onmessage = e => {
+    const data = JSON.parse(e.data);
+
+    if (data.done === true) {
+      es.close();
+      finishAiScoring();
+      return;
+    }
+
+    if (data.photo) {
+      const idx = state.photos.findIndex(p => p.filename === data.photo.filename);
+      if (idx >= 0) {
+        state.photos[idx] = data.photo;
+        updateCardInGrid(data.photo);
+      }
+    }
+
+    if (data.total > 0) {
+      const pct = Math.round((data.done / data.total) * 100);
+      aiProgressBar.style.setProperty('--progress', `${pct}%`);
+      aiProgressLabel.textContent = `AI scoring… ${data.done}/${data.total}`;
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    finishAiScoring();
+  };
+}
+
+function finishAiScoring() {
+  const btn = $('run-ai-btn');
+  btn.textContent = '✦ Run AI scoring';
+  btn.disabled = false;
+  aiProgressWrap.style.display = 'none';
+  renderStatsStrip();
+  renderGrid();
+}
+
+function updateCardInGrid(photo) {
+  for (const card of photoGrid.querySelectorAll('.photo-card')) {
+    if (card.dataset.filename === photo.filename) {
+      const newCard = buildCard(photo);
+      card.replaceWith(newCard);
+      break;
+    }
+  }
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
