@@ -682,17 +682,25 @@ function buildPanelBody(photo) {
       <span class="panel-verdict-label" style="color:${sColor}">${verdict}</span>
     </div>`;
 
-  // AI verdict box
-  if (photo.ai_usable === false) {
+  // AI verdict box — always shown
+  const hasAi = photo.ai_score != null;
+  if (!hasAi) {
+    html += `
+      <div class="panel-ai-note">
+        <p class="panel-ai-reason" style="font-style:normal;color:var(--text-dimmed);">
+          No AI analysis — enable AI scoring and re-analyse to get a description.
+        </p>
+      </div>`;
+  } else if (photo.ai_usable === false) {
     html += `
       <div class="panel-ai-warning">
         <span class="panel-ai-warning-label">AI flagged: not usable</span>
-        ${photo.ai_reason ? `<p class="panel-ai-reason">"${photo.ai_reason}"</p>` : ''}
+        <p class="panel-ai-reason">${photo.ai_reason || 'No reason provided.'}</p>
       </div>`;
-  } else if (photo.ai_reason) {
+  } else {
     html += `
       <div class="panel-ai-note">
-        <p class="panel-ai-reason">"${photo.ai_reason}"</p>
+        <p class="panel-ai-reason">${photo.ai_reason || 'No reason provided.'}</p>
       </div>`;
   }
 

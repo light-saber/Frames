@@ -73,25 +73,27 @@ def score_photo_with_ai(
             img_b64 = base64.b64encode(f.read()).decode()
 
         prompt = (
-            "You are a strict photo editor making keep/reject decisions for a photographer.\n"
-            "Your job is to flag technically UNUSABLE photos that should be culled.\n"
+            "You are a photography expert scoring RAW photos for technical quality.\n"
+            "Score honestly — a technically strong photo DESERVES a high score.\n"
             "\n"
-            "Look for these REJECTION reasons — if any apply, set usable=false:\n"
-            "  - Motion blur or camera shake on the main subject\n"
-            "  - Subject out of focus (blurry subject, accidentally focused on background)\n"
-            "  - Severely blown highlights or crushed blacks with no recoverable detail\n"
-            "  - No clear subject (accidental shot, obstructed lens, random framing)\n"
-            "  - Major obstruction blocking the subject (finger, strap, object)\n"
+            "WHAT TO SCORE:\n"
+            "  subject_clarity — Is the intended subject sharp and in focus?\n"
+            "  lighting        — Is exposure balanced? Any blown or crushed areas?\n"
+            "  composition     — Clear subject, sensible framing, no major obstructions?\n"
+            "  overall         — Holistic technical quality.\n"
             "\n"
-            "SCORE CALIBRATION — be strict and use the full range:\n"
-            "   0–20  Unusable. Severe blur, completely wrong exposure, or no subject.\n"
-            "  21–40  Poor. Significant flaw limits usability.\n"
-            "  41–60  Average. Usable but with clear issues.\n"
-            "  61–80  Good. Minor flaws, technically sound.\n"
-            "  81–100 Excellent. Sharp, well-exposed, strong framing.\n"
+            "SCORE GUIDE:\n"
+            "  80–100  Excellent. Sharp subject, good exposure, clear composition.\n"
+            "  60–79   Good. One minor flaw but generally strong.\n"
+            "  40–59   Average. Noticeable issues but usable.\n"
+            "  20–39   Poor. Significant flaw limits usefulness.\n"
+            "   0–19   Unusable. Severe blur, wrong focus, or unrecoverable exposure.\n"
             "\n"
-            "Most burst shots score 40–65. Only sharp, well-framed shots deserve 70+.\n"
-            "A blurry or badly framed photo MUST score below 40.\n"
+            "RULES:\n"
+            "  - A sharp, well-exposed photo with a clear subject MUST score at least 65.\n"
+            "  - Do not penalise bokeh backgrounds, artistic style, or tight crops.\n"
+            "  - Set usable=false ONLY when the subject itself is blurry, the exposure\n"
+            "    is completely unrecoverable, or there is no identifiable subject.\n"
             "\n"
             "Return ONLY this JSON, no other text:\n"
             "{\n"
@@ -100,7 +102,7 @@ def score_photo_with_ai(
             '  "subject_clarity": <integer 0-100>,\n'
             '  "overall": <integer 0-100>,\n'
             '  "usable": <true or false>,\n'
-            '  "reason": "<one sentence, key technical observation, max 30 words>"\n'
+            '  "reason": "<one specific observation, 10-20 words>"\n'
             "}"
         )
 
@@ -109,7 +111,7 @@ def score_photo_with_ai(
             "prompt": prompt,
             "images": [img_b64],
             "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 160, "num_ctx": 2048},
+            "options": {"temperature": 0.1, "num_predict": 200, "num_ctx": 2048},
         }).encode()
 
         req = urllib.request.Request(
