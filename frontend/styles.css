@@ -775,3 +775,198 @@ details[open] .expander-summary::before { transform: rotate(90deg); }
   text-align: right;
   flex-shrink: 0;
 }
+
+/* ── Detail panel ─────────────────────────────────────────────────────────── */
+
+.detail-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+  z-index: 30;
+  overflow: hidden;
+  box-shadow: -8px 0 32px rgba(0,0,0,0.4);
+}
+
+.detail-panel.open { transform: translateX(0); }
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.panel-filename {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: color 0.15s;
+}
+
+.panel-close-btn:hover { color: var(--text-primary); }
+
+.panel-thumb {
+  width: 100%;
+  display: block;
+  flex-shrink: 0;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.panel-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.panel-overall {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.panel-big-score {
+  font-family: 'DM Serif Display', serif;
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.panel-verdict-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.panel-ai-warning {
+  background: rgba(248,113,113,0.07);
+  border: 1px solid rgba(248,113,113,0.22);
+  border-radius: 7px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.panel-ai-warning-label {
+  display: block;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--red-reject);
+  margin-bottom: 6px;
+}
+
+.panel-ai-note {
+  background: rgba(167,139,250,0.06);
+  border: 1px solid rgba(167,139,250,0.16);
+  border-radius: 7px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.panel-ai-reason {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-style: italic;
+}
+
+.panel-section-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dimmed);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 12px;
+  margin-top: 18px;
+}
+
+.panel-metric { margin-bottom: 13px; }
+
+.panel-metric-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+
+.panel-metric-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.panel-metric-val {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.panel-metric-bar-bg {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.panel-metric-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.panel-metric-desc {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-dimmed);
+  margin-top: 4px;
+}
+
+.panel-dup-note {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: rgba(167,139,250,0.06);
+  border: 1px solid rgba(167,139,250,0.16);
+  border-radius: 7px;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}

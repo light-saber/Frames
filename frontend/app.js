@@ -3,11 +3,12 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
-  photos: [],          // all PhotoAnalysis objects from server
+  photos: [],
   activeFilter: 'all',
   sortBy: 'score_desc',
   analysing: false,
   colorSettings: null,
+  selectedPhoto: null,
 };
 
 let exportFormat = 'tiff';
@@ -38,6 +39,7 @@ const exportLabel     = $('export-label');
 
 async function init() {
   setupSidebar();
+  setupPanel();
   await checkOllamaStatus();
   await loadPhotos();
   await loadColorSettings();
@@ -522,6 +524,9 @@ function buildCard(photo) {
       <button class="card-btn ${rejActive}"  data-action="reject">${rejLabel}</button>
     </div>`;
 
+  // Thumbnail click opens detail panel
+  card.querySelector('.thumb-wrap').addEventListener('click', () => openPanel(photo));
+
   // Button handlers
   card.querySelectorAll('.card-btn').forEach(btn => {
     btn.addEventListener('click', () => toggleStatus(photo, btn.dataset.action, card));
@@ -602,6 +607,151 @@ function renderColorSliders() {
 
     container.appendChild(row);
   });
+}
+
+// ── Detail panel ─────────────────────────────────────────────────────────────
+
+function setupPanel() {
+  $('panel-close').addEventListener('click', closePanel);
+  $('panel-keep-btn').addEventListener('click',   () => panelToggleStatus('keep'));
+  $('panel-reject-btn').addEventListener('click', () => panelToggleStatus('reject'));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+}
+
+function openPanel(photo) {
+  state.selectedPhoto = photo;
+  $('panel-filename').textContent = photo.filename;
+  $('panel-thumb').src = `/api/photo/${encodeURIComponent(photo.filename)}/thumbnail`;
+  $('panel-thumb').alt = photo.filename;
+  $('panel-body').innerHTML = buildPanelBody(photo);
+  updatePanelButtons(photo);
+  $('detail-panel').classList.add('open');
+}
+
+function closePanel() {
+  state.selectedPhoto = null;
+  $('detail-panel').classList.remove('open');
+}
+
+function updatePanelButtons(photo) {
+  const keepBtn = $('panel-keep-btn');
+  const rejBtn  = $('panel-reject-btn');
+  keepBtn.textContent = photo.status === 'keep'   ? '↩ Kept'   : '✓ Keep';
+  rejBtn.textContent  = photo.status === 'reject' ? '↩ Undo'   : '✗ Reject';
+  keepBtn.className = `card-btn${photo.status === 'keep'   ? ' active-keep'   : ''}`;
+  rejBtn.className  = `card-btn${photo.status === 'reject' ? ' active-reject' : ''}`;
+}
+
+async function panelToggleStatus(action) {
+  const photo = state.selectedPhoto;
+  if (!photo) return;
+
+  const newStatus = photo.status === action ? 'pending' : action;
+  await fetch(`/api/photo/${encodeURIComponent(photo.filename)}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus }),
+  });
+  photo.status = newStatus;
+
+  // Sync the card in the grid
+  for (const c of photoGrid.querySelectorAll('.photo-card')) {
+    if (c.dataset.filename === photo.filename) {
+      c.className = `photo-card status-${newStatus}`;
+      const [keepBtn, rejBtn] = c.querySelectorAll('.card-btn');
+      if (keepBtn) { keepBtn.textContent = newStatus === 'keep'   ? '↩ kept'  : '✓ Keep';   keepBtn.className = `card-btn${newStatus === 'keep'   ? ' active-keep'   : ''}`; }
+      if (rejBtn)  { rejBtn.textContent  = newStatus === 'reject' ? '↩ unrej' : '✗ Reject'; rejBtn.className  = `card-btn${newStatus === 'reject' ? ' active-reject' : ''}`; }
+      break;
+    }
+  }
+
+  updatePanelButtons(photo);
+  renderStatsStrip();
+  updateExportSection();
+  renderStepIndicator();
+  if (state.activeFilter !== 'all') renderGrid();
+}
+
+function buildPanelBody(photo) {
+  const sColor  = scoreColor(photo.overall_score);
+  const verdict = overallVerdict(photo.overall_score);
+
+  let html = `
+    <div class="panel-overall">
+      <span class="panel-big-score" style="color:${sColor}">${photo.overall_score.toFixed(0)}</span>
+      <span class="panel-verdict-label" style="color:${sColor}">${verdict}</span>
+    </div>`;
+
+  // AI verdict box
+  if (photo.ai_usable === false) {
+    html += `
+      <div class="panel-ai-warning">
+        <span class="panel-ai-warning-label">AI flagged: not usable</span>
+        ${photo.ai_reason ? `<p class="panel-ai-reason">"${photo.ai_reason}"</p>` : ''}
+      </div>`;
+  } else if (photo.ai_reason) {
+    html += `
+      <div class="panel-ai-note">
+        <p class="panel-ai-reason">"${photo.ai_reason}"</p>
+      </div>`;
+  }
+
+  // Technical metrics
+  html += `<div class="panel-section-label">Technical</div>`;
+  html += panelMetric('Sharpness', photo.sharpness,  'var(--accent-gold)',   describeSharpness(photo.sharpness));
+  html += panelMetric('Exposure',  photo.exposure,   'var(--blue-exposure)', describeExposure(photo.exposure));
+
+  // AI sub-scores
+  if (photo.ai_composition != null) {
+    html += `<div class="panel-section-label">AI Analysis</div>`;
+    html += panelMetric('Composition',   photo.ai_composition,    'var(--purple-dupe)');
+    html += panelMetric('Lighting',      photo.ai_lighting,       '#7dd3fc');
+    html += panelMetric('Subject Focus', photo.ai_subject_clarity,'#86efac');
+  }
+
+  // Duplicate note
+  if (photo.is_duplicate) {
+    html += `<div class="panel-dup-note">Near-identical to <strong>${photo.duplicate_of}</strong></div>`;
+  }
+
+  return html;
+}
+
+function panelMetric(label, value, color, desc) {
+  const pct = Math.min(100, Math.max(0, value ?? 0));
+  return `
+    <div class="panel-metric">
+      <div class="panel-metric-top">
+        <span class="panel-metric-label">${label}</span>
+        <span class="panel-metric-val" style="color:${color}">${pct.toFixed(0)}</span>
+      </div>
+      <div class="panel-metric-bar-bg">
+        <div class="panel-metric-bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+      ${desc ? `<div class="panel-metric-desc">${desc}</div>` : ''}
+    </div>`;
+}
+
+function overallVerdict(score) {
+  if (score >= 75) return 'Excellent';
+  if (score >= 60) return 'Good';
+  if (score >= 45) return 'Average';
+  if (score >= 30) return 'Below average';
+  return 'Poor';
+}
+
+function describeSharpness(s) {
+  if (s >= 75) return 'Tack sharp';
+  if (s >= 50) return 'Acceptably sharp';
+  if (s >= 30) return 'Slightly soft';
+  return 'Blurry or out of focus';
+}
+
+function describeExposure(s) {
+  if (s >= 75) return 'Well exposed';
+  if (s >= 50) return 'Acceptable exposure';
+  if (s >= 30) return 'Exposure issues';
+  return 'Over or underexposed';
 }
 
 // ── Kick off ──────────────────────────────────────────────────────────────────
