@@ -484,6 +484,8 @@ function buildCard(photo) {
     ? `<span class="dup-tag">dup</span>` : '';
   const aiErrHtml = photo.ai_error
     ? `<span class="ai-error-tag" title="${photo.ai_error.replace(/"/g, '&quot;')}">AI ✕</span>` : '';
+  const aiRejectHtml = (photo.ai_usable === false)
+    ? `<span class="ai-reject-tag" title="${(photo.ai_reason || '').replace(/"/g, '&quot;')}">AI reject</span>` : '';
 
   const sColor = scoreColor(photo.overall_score);
 
@@ -513,7 +515,7 @@ function buildCard(photo) {
       <div class="card-metrics">${metrics}${aiReasonHtml}</div>
     </div>
     <div class="card-footer">
-      <span class="filename">${fname}</span>${dupHtml}${aiErrHtml}
+      <span class="filename">${fname}</span>${dupHtml}${aiErrHtml}${aiRejectHtml}
     </div>
     <div class="card-actions">
       <button class="card-btn ${keepActive}" data-action="keep">${keepLabel}</button>

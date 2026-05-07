@@ -622,6 +622,19 @@ details[open] .expander-summary::before { transform: rotate(90deg); }
   cursor: help;
 }
 
+.ai-reject-tag {
+  background: #2a0f0f;
+  color: var(--red-reject);
+  border: 1px solid #7f1d1d;
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-family: 'DM Mono', monospace;
+  flex-shrink: 0;
+  margin-left: 5px;
+  cursor: help;
+}
+
 .card-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

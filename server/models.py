@@ -39,6 +39,7 @@ class PhotoAnalysis:
     ai_composition: Optional[float] = field(default=None)
     ai_lighting: Optional[float] = field(default=None)
     ai_subject_clarity: Optional[float] = field(default=None)
+    ai_usable: Optional[bool] = field(default=None)
     ai_error: Optional[str] = field(default=None)
 
 
