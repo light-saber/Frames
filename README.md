@@ -1,6 +1,6 @@
 # Frames
 
-A native macOS photo culling and colour correction tool for Nikon RAW files. Point it at a folder of NEFs, score every shot for sharpness, exposure, and duplicates, then export your selects as colour-corrected TIFFs or JPEGs — fully offline, no browser required.
+A native macOS photo culling and colour correction tool for RAW files. Point it at a folder of RAW photos, score every shot for sharpness, exposure, and duplicates, review them in a clean 3-column grid, then export your selects as colour-corrected TIFFs or JPEGs — fully offline, no browser required.
 
 ---
 
@@ -9,10 +9,11 @@ A native macOS photo culling and colour correction tool for Nikon RAW files. Poi
 - **Sharpness scoring** — Laplacian variance on the central crop; detects blur and missed focus
 - **Exposure scoring** — Measures brightness distribution and penalises blown highlights and crushed shadows
 - **Saturation fitness** — Flags over-saturated or grey shots
-- **Duplicate detection** — Perceptual hashing (16×16) with Hamming distance; auto-rejects near-identical frames
+- **Duplicate detection** — Perceptual hashing with Hamming distance; auto-rejects near-identical burst frames
 - **AI scoring (optional)** — Qwen2.5-VL 3B via Ollama scores composition, lighting, and subject clarity; blends into the overall score when enabled
+- **AI detail panel** — Click any photo to open a side panel showing the score breakdown, AI verdict, plain-language descriptions, and individual AI sub-scores
 - **Colour correction pipeline** — Highlight recovery, shadow lift, brightness/contrast, saturation boost, unsharp mask sharpening — applied on export, not preview
-- **Auto colour enhance** — One-click adaptive enhancement: grey-world white balance, CLAHE contrast, saturation boost (×1.15), and a gentle S-curve tonemap; applied before manual colour correction
+- **Auto colour enhance** — One-click adaptive enhancement: grey-world white balance, CLAHE contrast, saturation boost (×1.15), and a gentle S-curve tonemap
 - **TIFF or JPEG export** — Choose output format; JPEG quality is configurable from 60–100
 - **Finder folder picker** — Native macOS folder dialog via the 📂 button
 - **Session persistence** — Analysis results and keep/reject decisions survive app restarts
@@ -33,60 +34,29 @@ A native macOS photo culling and colour correction tool for Nikon RAW files. Poi
 
 ## Installation
 
-### Option A — Build from source (recommended)
+### Option A — Build the app (recommended)
 
-**1. Install Python 3.11+ via Homebrew**
-
-```bash
-brew install python@3.14
-```
-
-Check it's available:
-
-```bash
-/opt/homebrew/bin/python3.14 --version
-# Python 3.14.x
-```
-
-**2. Clone the repo**
+The `build.sh` script handles everything: Python version check, virtual environment, dependencies, and PyInstaller bundle.
 
 ```bash
 git clone https://github.com/light-saber/Frames.git
 cd Frames
+bash build.sh
 ```
 
-**3. Create a virtual environment and install dependencies**
-
-```bash
-/opt/homebrew/bin/python3.14 -m venv .venv
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt
-```
-
-**4. Build the app**
-
-```bash
-.venv/bin/pyinstaller Frames.spec --clean --noconfirm
-```
-
-This produces `dist/Frames.app`.
-
-**5. Install system-wide**
+This produces `dist/Frames.app`. Install it:
 
 ```bash
 cp -r dist/Frames.app /Applications/
+open /Applications/Frames.app
 ```
-
-Then launch from Finder or Spotlight like any other Mac app.
-
----
 
 ### Option B — Run in dev mode (no build step)
 
-Skip the PyInstaller step entirely — run directly from source:
-
 ```bash
-/opt/homebrew/bin/python3.14 -m venv .venv
+git clone https://github.com/light-saber/Frames.git
+cd Frames
+python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 source .venv/bin/activate
@@ -101,19 +71,20 @@ The app opens in a native macOS window via WebKit. Useful for development and te
 
 1. **Select folder** — Paste the path to your RAW files, or click 📂 to open a native Finder folder picker
 2. **Analyse** — Click **▶ Analyse Photos**. Progress streams live as each file is processed. Expect roughly 10–15 min for 200 photos on Intel Mac; significantly faster on Apple Silicon
-3. **Review scores** — Photos are sorted best-first in a 4-column grid. Border colour indicates status: green = keep, red = reject, grey = pending
-4. **Auto-cull** — Use **Apply threshold** to bulk-mark photos above/below a score (default 65)
-5. **Fine-tune** — Click **✓ Keep** or **✗ Reject** on any card. Use the filter tabs to focus on a subset
-6. **Adjust colour** — Tweak the Color Settings sliders in the sidebar (applied at export time, not to the preview)
-7. **Set export options** — Toggle **✨ Auto enhance colours** for adaptive per-photo enhancement. Choose **TIFF** or **JPEG** (set quality 60–100). Enter the destination path or click 📂
-8. **Export** — Click **⬇ Export kept photos**. Files are saved as `{name}_edited.tiff` or `{name}_edited.jpg`
+3. **Review** — Photos are sorted best-first in a 3-column grid. Border colour indicates status: green = keep, red = reject, grey = pending
+4. **Inspect** — Click any photo thumbnail to open the **detail panel**: see the full score breakdown, AI verdict, plain-language sharpness/exposure description, and individual AI sub-scores
+5. **Auto-cull** — Use **Apply threshold** to bulk-mark photos above/below a score (default 65)
+6. **Fine-tune** — Click **✓ Keep** or **✗ Reject** on any card, or use the buttons in the detail panel. The green/red highlight shows the active state. Use the filter tabs to focus on a subset
+7. **Adjust colour** — Tweak the Color Settings sliders in the sidebar (applied at export time, not to the preview)
+8. **Set export options** — Toggle **✨ Auto enhance colours** for adaptive per-photo enhancement. Choose **TIFF** or **JPEG** (set quality 60–100). Enter the destination path or click 📂
+9. **Export** — Click **⬇ Export kept photos**. Files are saved as `{name}_edited.tiff` or `{name}_edited.jpg`
 
 ---
 
 ## Score Breakdown
 
-| Score | Badge | Meaning |
-|------:|-------|---------|
+| Score | Colour | Meaning |
+|------:|--------|---------|
 | 70–100 | Green | Sharp, well-exposed, good colour — likely a keeper |
 | 45–69 | Amber | Acceptable — review manually |
 | 0–44 | Red | Blurry, badly exposed, or flat colour |
@@ -128,7 +99,7 @@ Weights with AI: **Sharpness 35%** · **AI score 35%** · **Exposure 20%** · **
 
 Frames can use **Qwen2.5-VL 3B** running locally via [Ollama](https://ollama.com) to score each photo on composition, lighting, and subject clarity.
 
-**Setup:**
+### Setup
 
 ```bash
 # Install Ollama from https://ollama.com, then:
@@ -136,6 +107,32 @@ ollama pull qwen2.5vl:3b
 ```
 
 When Frames launches it automatically starts `ollama serve` if it isn't already running, and pulls `qwen2.5vl:3b` if the model is absent. The sidebar shows a green **● Ollama running** indicator once it's ready. Enable **AI scoring** before clicking **▶ Analyse Photos**. Each photo adds roughly 5–15 seconds of inference time.
+
+### What the AI evaluates
+
+| Sub-score | What it measures |
+|-----------|-----------------|
+| Composition (C) | Clear subject, sensible framing, no major obstructions |
+| Lighting (L) | Balanced exposure, no blown highlights or crushed shadows |
+| Subject Focus (F) | Primary subject sharp and in focus |
+
+The AI also produces a one-sentence reason describing the key technical observation, visible in the detail panel.
+
+### Usability flag
+
+If the AI determines a photo is technically unusable (motion blur on the subject, wrong focus plane, unrecoverable exposure, or no identifiable subject), it sets an **AI reject** flag. The photo's overall score is hard-capped at 35 — well below the default 65 auto-select threshold — and a red **AI reject** badge appears on the card.
+
+### Photo detail panel
+
+Click any photo thumbnail to open the detail panel:
+
+- **Overall score** — large colour-coded number with a plain verdict (Excellent / Good / Average / Below average / Poor)
+- **AI verdict** — red warning box if flagged as not usable; purple note with the AI's observation otherwise
+- **Technical breakdown** — Sharpness and Exposure bars with plain-language descriptions ("Tack sharp", "Blurry or out of focus", "Well exposed", "Exposure issues")
+- **AI sub-scores** — Composition, Lighting, and Subject Focus bars when AI scoring was run
+- **Keep / Reject buttons** — stay in sync with the grid
+
+Close the panel with the **✕** button or press **Escape**.
 
 ---
 
@@ -158,7 +155,8 @@ All adjustments are applied in sequence on a `float32` [0, 1] image. When **Auto
 
 - **Colour science** — Nikon Picture Control profiles (Vivid, Portrait, etc.) are not replicated. Export colours will differ from NX Studio's rendering
 - **High-ISO noise** — Heavy noise can reduce sharpness scores due to the Laplacian variance method picking up texture as signal
-- **Performance** — First run on 200 photos takes ~10–15 min on Intel Mac; much faster on M-series
+- **AI model size** — Qwen2.5-VL 3B is a small vision model. Scores are a useful signal but not a substitute for human review
+- **Performance** — First run on 200 photos takes ~10–15 min on Intel Mac; much faster on M-series. AI scoring adds ~5–15 s per photo
 - **Output format** — Exports are standard TIFFs or JPEGs, not NX Studio native files. Compatible with Lightroom, Affinity Photo, and any TIFF/JPEG editor
 
 ---
